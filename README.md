@@ -22,12 +22,16 @@ overlap (as the extracts of `osmium extract -c`), and a memory limit (`--memory`
 
 ## Install and use
 
+You must have Rust and Cargo (https://rustup.rs). Cargo compiles pbfcut from its source code:
+
 ```bash
 cargo install --git https://github.com/Khoshkhah/pbfcut
 ```
 
+Download the `.osm.pbf` file of an area from Geofabrik (https://download.geofabrik.de), then cut it:
+
 ```bash
-pbfcut tiles region.osm.pbf --zoom 8 -o tiles/
+pbfcut tiles sweden-latest.osm.pbf --zoom 8 -o tiles/
 ```
 
 The manual: https://khoshkhah.github.io/pbfcut/manual/ (source in `docs/`). The design and the plan:
