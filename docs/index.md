@@ -19,4 +19,8 @@ node in one compressed list for all tiles, and writes the large lists to tempora
 - [Cut a file into tiles](tutorials/cut-to-tiles.md): a tutorial on Monaco.
 - [The command line](reference/cli.md): all commands and options.
 - [The rules of the cut](explanation/rules.md): what each tile file holds.
-- [Design](design.md): the plan of the project (H3 cells, GeoJSON areas, the memory limit, the online page).
+
+## Planned
+
+H3 cells and GeoJSON areas as outputs, a memory limit for large files, and an online page that cuts a file in the
+browser.

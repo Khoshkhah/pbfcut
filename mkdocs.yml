@@ -10,6 +10,9 @@ theme:
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
       toggle: { icon: material/brightness-4, name: Light mode }
+# the plan of the project is for developers: on GitHub, not on the site
+exclude_docs: |
+  design.md
 markdown_extensions:
   - tables
   - admonition
@@ -22,4 +25,3 @@ nav:
       - The command line: reference/cli.md
   - Explanation:
       - The rules of the cut: explanation/rules.md
-      - Design: design.md
