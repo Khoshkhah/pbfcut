@@ -1,4 +1,4 @@
-//! A fast decoder of the data blocks of a `.osm.pbf` file (duckOSM docs/design/streaming_load.md). It
+//! A fast decoder of the data blocks of a `.osm.pbf` file. It
 //! reads the protobuf bytes in place, as `ST_READOSM` does: the string table is checked as UTF-8 one time for each
 //! block, the keys, the values and the refs go into buffers that are used again, the metadata (`Info`) is skipped, and
 //! the groups of the kinds that are not wanted are skipped. `osmpbf` builds owned objects with vectors for each way,

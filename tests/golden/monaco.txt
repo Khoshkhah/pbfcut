@@ -1,4 +1,4 @@
-# the tile cut of duckOSM e3ce06a on tests/data/monaco.osm.pbf: variant, file, FNV-1a 64 and size of the blocks after the header
+# The reference tile files of tests/data/monaco.osm.pbf (pbfcut 11276bc): variant, file, FNV-1a 64 and size of the blocks after the header
 tiles-z14 14_8529_5974.osm.pbf 0237a894d0562936 401751
 tiles-z14 14_8530_5974.osm.pbf 0a352ca644e6bf81 81160
 tiles-z14 14_8529_5973.osm.pbf 35ef867adb447e6e 136631
@@ -14,13 +14,13 @@ tiles-z15-border25 15_17060_11947.osm.pbf e20558f5f1d8dfa0 217354
 tiles-z15-border25 15_17061_11947.osm.pbf ed054562ff6df8cd 28452
 tiles-z15-border25 15_17060_11946.osm.pbf 00288d2bb966c1d7 163845
 tiles-z15-border25 15_17061_11946.osm.pbf df788032ddee0135 129176
-quack-z14 14_8529_5974.osm.pbf 2cd66f0fe4d22c64 729015
-quack-z14 14_8530_5974.osm.pbf dd3b50a297ebda51 171949
-quack-z14 14_8529_5973.osm.pbf f21c972eceb5afd4 305420
-quack-z14 14_8530_5973.osm.pbf 9acca4bb95ad333c 465244
-quack-mixed-z14-z15 14_8529_5974.osm.pbf 2cd66f0fe4d22c64 729015
-quack-mixed-z14-z15 15_17060_11949.osm.pbf 7feb89300ec3a3fc 69061
-quack-mixed-z14-z15 15_17060_11948.osm.pbf d70df47c9613b1c0 169356
-quack-mixed-z14-z15 15_17059_11947.osm.pbf f21c972eceb5afd4 305420
-quack-mixed-z14-z15 14_8530_5973.osm.pbf 9acca4bb95ad333c 465244
+store-z14 14_8529_5974.osm.pbf 2cd66f0fe4d22c64 729015
+store-z14 14_8530_5974.osm.pbf dd3b50a297ebda51 171949
+store-z14 14_8529_5973.osm.pbf f21c972eceb5afd4 305420
+store-z14 14_8530_5973.osm.pbf 9acca4bb95ad333c 465244
+store-mixed-z14-z15 14_8529_5974.osm.pbf 2cd66f0fe4d22c64 729015
+store-mixed-z14-z15 15_17060_11949.osm.pbf 7feb89300ec3a3fc 69061
+store-mixed-z14-z15 15_17060_11948.osm.pbf d70df47c9613b1c0 169356
+store-mixed-z14-z15 15_17059_11947.osm.pbf f21c972eceb5afd4 305420
+store-mixed-z14-z15 14_8530_5973.osm.pbf 9acca4bb95ad333c 465244
 area monaco.osm.pbf 40b041ac5e2fc2f3 552499

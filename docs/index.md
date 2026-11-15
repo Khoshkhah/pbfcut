@@ -22,5 +22,8 @@ node in one compressed list for all tiles, and writes the large lists to tempora
 
 ## Planned
 
-H3 cells and GeoJSON areas as outputs, a memory limit for large files, and an online page that cuts a file in the
-browser.
+- H3 cells: all cells of one resolution (`pbfcut h3 IN.osm.pbf --res 7`), or a list of cells of different
+  resolutions.
+- GeoJSON areas: each feature is one output, as the extracts of `osmium extract -c`. The areas can overlap.
+- A memory limit for large files (`--memory`).
+- An online page that cuts a file in the browser.

@@ -99,7 +99,7 @@ pub fn file_blob<W: Write>(w: &mut W, kind: &str, data: &[u8]) -> Result<(), Str
 }
 
 /// [`file_blob`], with the data as it is (`raw`, the field 1 of a blob) or compressed with zlib. A temporary file that is
-/// read one time soon after does not need the compression (quack by tiles: 30 % less CPU on France).
+/// read one time soon after does not need the compression (30 % less CPU on France).
 pub fn file_blob_as<W: Write>(w: &mut W, kind: &str, data: &[u8], raw: bool) -> Result<(), String> {
     let mut blob = Vec::new();
     if raw {

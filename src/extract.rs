@@ -1,6 +1,4 @@
-//! Step 0 of a build with a boundary: the cut of the region file to the area, written to a `.osm.pbf` file while the
-//! region file is read (docs/concepts/offline-online.md, step 0). The later steps then read the area file as a whole
-//! file. The cut keeps only lists of ids in memory, never the elements: each element goes from a block of the region
+//! The cut of a region file to one area, written to a `.osm.pbf` file while the region file is read. The cut keeps only lists of ids in memory, never the elements: each element goes from a block of the region
 //! file straight into a block of the area file.
 //!
 //! The rules are those of osmium's `smart` cut: the nodes inside the boundary; each way

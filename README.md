@@ -17,6 +17,9 @@ Sweden (975 MB) on a Mac mini (12 cores, 16 GB):
 
 The same code builds for WebAssembly (`wasm32-unknown-unknown`), so a browser page can cut a file.
 
+Planned: H3 cells of one resolution (`pbfcut h3 IN.osm.pbf --res 7`) or of mixed resolutions, GeoJSON areas that can
+overlap (as the extracts of `osmium extract -c`), and a memory limit (`--memory`).
+
 ## Install and use
 
 ```bash
@@ -30,10 +33,13 @@ pbfcut tiles region.osm.pbf --zoom 8 -o tiles/
 The manual: https://khoshkhah.github.io/pbfcut/manual/ (source in `docs/`). The design and the plan:
 [docs/design.md](docs/design.md).
 
-## Where it comes from
+## Use it from Rust
 
-The code is the tile cut of [duckOSM](https://github.com/Khoshkhah/duckOSM) at commit e3ce06a. The test
-`tests/golden.rs` makes sure that pbfcut gives the same tile files as that commit. duckOSM and
-[duckOSM Studio](https://github.com/Khoshkhah/duckosm-studio) will use pbfcut as a Git dependency.
+```toml
+[dependencies]
+pbfcut = { git = "https://github.com/Khoshkhah/pbfcut" }
+```
+
+`pbfcut::tilecut::cut_to_tiles` writes the tile files into a folder. `pbfcut::extract::cut_to_pbf` cuts one area.
 
 MIT license.
