@@ -1,4 +1,4 @@
-//! Step 0 of a build by tiles: one read of the region file gives one area file for each tile ([`crate::tiles`]). Each tile
+//! The tile cut: one read of the region file gives one area file for each tile ([`crate::tiles`]). Each tile
 //! file has the elements that [`crate::extract::cut_where`] gives for the tile: the nodes inside the boundary and in the
 //! tile, the ways with such a node, whole, the relations with a member there and their parent relations, and the members
 //! of those multipolygons.
@@ -6,7 +6,7 @@
 //! A node has its place, so its tile is known when it is read. A way and a relation have only the ids of their members,
 //! and they come after the nodes in the file: the cut keeps the tile of each node in memory, as runs of ids, compressed
 //! ([`Book`]: nodes with near ids are usually made together, in one place). The ways get a book too. The cut reads the
-//! file two times (docs/design/tile_cut_two_reads.md): read 1 only plans, read 2 writes each element straight into the
+//! file two times: read 1 only plans, read 2 writes each element straight into the
 //! files of its tiles, once.
 //!
 //! Read 1:
@@ -1008,8 +1008,8 @@ impl Codec<(i64, i64)> for Pair {
     }
 }
 
-/// The uses of the nodes by the ways, for the junctions files of the build by tiles. The cut does not know about roads:
-/// the program that calls it gives these two functions (duckOSM: the junctions of its road network).
+/// The uses of the nodes by the ways, for the junctions files of a build by tiles. The cut does not know about roads:
+/// the program that calls it gives these two functions (for example, which nodes are junctions of its road network).
 pub trait NodeUses: Sync {
     /// The uses of the nodes of a way: (node, flags), with flags in bits 0 and 1 only.
     fn of_way(&self, tags: &[(String, String)], refs: &[i64], out: &mut Vec<(i64, u8)>);
@@ -1178,8 +1178,8 @@ impl Drop for TileFiles {
 }
 
 /// [`cut_to_tiles`] into the temporary store (`spill::temp_store`: a folder natively, OPFS in the browser), with no
-/// junctions files and with no zlib in the tile files: quack by tiles (duckOSM's quack by tiles) and the tile
-/// tables. `complete`: the types of the relations to complete with all their members (quack: `multipolygon` and
+/// junctions files and with no zlib in the tile files: for a program that reads each tile file one time, soon after the
+/// cut. `complete`: the types of the relations to complete with all their members (for example `multipolygon` and
 /// `boundary`), each one in each tile with a member, so each tile file is complete (as the cut of the build by tiles and
 /// osmium's smart cut).
 pub fn cut_to_store<R: Read + Seek + Send>(
@@ -1222,7 +1222,7 @@ pub fn cut_to_store_build<R: Read + Seek + Send>(
 }
 
 /// [`cut_to_store`], with each tile file given to `sink` (in pieces, tile by tile): the browser writes each tile into a
-/// file of its own, so that a worker for each tile can read it (duckOSM's quack in each worker). With
+/// file of its own, so that a worker for each tile can read it. With
 /// `memory`, the browser keeps the parts of the tiles in memory, compressed with zlib, not in OPFS: the cut writes many
 /// small pieces of parts, and each write to OPFS goes through JavaScript (slow on some PCs).
 pub fn cut_to_sink<R: Read + Seek + Send>(
@@ -1264,7 +1264,7 @@ pub fn cut_to_sink<R: Read + Seek + Send>(
 /// The cut of [`cut_to_tiles`] and [`cut_to_store`]: the temporary files in `files`; the tile files into `dir` with their
 /// junctions files, with no `dir` into `files` as the part "tile" of each tile, or into `sink`. Each relation of a type in
 /// `complete` is complete in every tile with a member (every tile file is complete). `node_uses`: the cut of the build
-/// by tiles, with the junctions of each tile; none: quack's cut, with no junctions.
+/// by tiles, with the junctions of each tile; none: no junctions.
 fn cut<R: Read + Seek + Send>(
     open: impl Fn() -> Result<R, String>,
     boundary: &Boundary,
@@ -1630,7 +1630,7 @@ fn cut<R: Read + Seek + Send>(
     });
     let mut r = open()?;
     {
-        // read 2 (docs/design/tile_cut_two_reads.md): each element straight into its tile files, once: the nodes, the
+        // read 2: each element straight into its tile files, once: the nodes, the
         // junctions (the build by tiles), the ways, the relations
         let with_file = &with_file;
         let mut writers = write::Writers::new(tiles.len(), timestamp, raw, write::outputs(tiles, dir, &parts, sink)?)?;

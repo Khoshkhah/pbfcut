@@ -6,16 +6,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `pbfcut` is a Rust library and command. It cuts an OpenStreetMap `.osm.pbf` file into map tiles or areas. One read of the input gives all outputs. Each output is a complete `.osm.pbf` file: the nodes in the area, each way with a node there (with all its nodes), and the relations with a member there.
 
-The code comes from duckOSM `rust/duckosm-core` at commit `e3ce06a`. duckOSM and duckOSM Studio use this crate as a Git dependency at one `rev`.
+pbfcut is an independent project. Do not mention the other projects of the owner in the code, the tests, the README or the manual.
 
-`docs/design.md` is the source of truth for scope and decisions. Status: only the `tiles` and `compare` commands exist. H3 cells and GeoJSON area lists (osmium-style extracts) are planned and not in the code. The files in `docs/concepts/` and `docs/design/` that the code comments name are in duckOSM, not in this repository.
+`docs/design.md` is the source of truth for scope and decisions. Status: only the `tiles` and `compare` commands exist. H3 cells and GeoJSON area lists (osmium-style extracts) are planned and not in the code. `docs/design.md` is for developers: `mkdocs.yml` keeps it out of the published manual.
 
 ## Commands
 
 ```bash
 cargo build --release
 cargo test --release                                  # unit tests and the golden tests
-cargo test --release --test golden tile_files_equal_duckosm   # one test
+cargo test --release --test golden tile_files_equal_the_reference   # one test
 cargo clippy --release
 ```
 
@@ -30,11 +30,9 @@ cargo run --release -- compare DIR_A DIR_B           # exit 1 if the elements of
 
 ## Golden tests
 
-`tests/golden.rs` compares the output with hashes of duckOSM's output at `e3ce06a` (`tests/golden/duckosm-e3ce06a.txt`). The input is `tests/data/monaco.osm.pbf`. The hash covers the blocks after the header block, because the header names the program.
+`tests/golden.rs` compares the output with the hashes of the reference files (`tests/golden/monaco.txt`, from pbfcut 11276bc). The input is `tests/data/monaco.osm.pbf`. The hash covers the blocks after the header block, because the header names the program.
 
 If a golden test fails, a change altered the result. Find the cause. **Never edit the golden file to make a test pass.**
-
-`tools/golden` makes the golden file. It is a separate Cargo workspace, and it depends on duckOSM by Git `rev`. You run it one time. The command is in its `Cargo.toml`.
 
 ## Architecture
 
@@ -53,5 +51,5 @@ The library (`src/lib.rs`) has one module for each job. The command in `src/main
 - **The output bytes must not depend on the target.** zlib output uses `miniz_oxide` (pure Rust). zlib input uses `flate2` with `zlib-rs`. Do not change these for a faster native library. The native build and the WebAssembly build must write the same file.
 - **The code runs natively and on `wasm32`.** The paths with `#[cfg(target_arch = "wasm32")]` use a `Store` of the page (OPFS) and not temporary folders. Keep both paths working.
 - **Memory is the main limit.** The cut keeps lists of ids, never the elements. A change that holds elements in memory can make large inputs (France, Sweden) fail.
-- **Behavior must equal duckOSM.** One known difference from `osmium extract`: a node exactly on a tile border goes to one tile, not two.
+- **Behavior must equal the reference files.** One known difference from `osmium extract`: a node exactly on a tile border goes to one tile, not two.
 - Code comments and docs use ASD-STE100 Simplified Technical English (see the global instructions).

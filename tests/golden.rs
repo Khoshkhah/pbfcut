@@ -1,5 +1,5 @@
-//! The tile files of pbfcut equal those of duckOSM's tile cut at e3ce06a, where pbfcut started (tests/golden/, made by
-//! tools/golden). A failing test means that a change altered a result: find the cause. Never edit the golden file to
+//! The tile files equal the reference files (tests/golden/monaco.txt: the hashes of the files of pbfcut 11276bc). A
+//! failing test means that a change altered a result: find the cause. Never edit the golden file to
 //! make the test pass.
 
 use pbfcut::boundary::{Boundary, WORLD};
@@ -40,7 +40,7 @@ fn mixed(b: &Boundary) -> Vec<Tile> {
 
 /// The golden lines of one variant: file name -> hash.
 fn golden(variant: &str) -> BTreeMap<String, String> {
-    let text = include_str!("golden/duckosm-e3ce06a.txt");
+    let text = include_str!("golden/monaco.txt");
     let rows: BTreeMap<String, String> = text
         .lines()
         .filter(|l| !l.starts_with('#'))
@@ -60,7 +60,7 @@ fn data() -> (std::path::PathBuf, Boundary) {
 }
 
 #[test]
-fn tile_files_equal_duckosm() {
+fn tile_files_equal_the_reference() {
     let (pbf, monaco) = data();
     let open = || std::fs::File::open(&pbf).map(std::io::BufReader::new).map_err(|e| e.to_string());
     for (variant, z, border) in [("tiles-z14", 14u8, 0.0), ("tiles-z15-border25", 15, 25.0)] {
@@ -76,11 +76,11 @@ fn tile_files_equal_duckosm() {
 }
 
 #[test]
-fn quack_tile_files_equal_duckosm() {
+fn store_tile_files_equal_the_reference() {
     let (pbf, monaco) = data();
     let open = || std::fs::File::open(&pbf).map(std::io::BufReader::new).map_err(|e| e.to_string());
     let world = Boundary::parse(WORLD).unwrap();
-    for (variant, list) in [("quack-z14", tiles(&monaco, 14)), ("quack-mixed-z14-z15", mixed(&monaco))] {
+    for (variant, list) in [("store-z14", tiles(&monaco, 14)), ("store-mixed-z14-z15", mixed(&monaco))] {
         let files = pbfcut::tilecut::cut_to_store(open, &world, &list, &["multipolygon", "boundary"]).unwrap();
         let mut got = BTreeMap::new();
         for (i, (t, c)) in files.tiles.iter().enumerate() {
@@ -95,7 +95,7 @@ fn quack_tile_files_equal_duckosm() {
 }
 
 #[test]
-fn area_file_equals_duckosm() {
+fn area_file_equals_the_reference() {
     let (pbf, monaco) = data();
     let open = || std::fs::File::open(&pbf).map(std::io::BufReader::new).map_err(|e| e.to_string());
     let (b, _) = pbfcut::extract::cut_to_pbf(open, &monaco, Vec::new()).unwrap();

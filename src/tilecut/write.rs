@@ -1,4 +1,4 @@
-//! Read 2 of the tile cut (docs/design/tile_cut_two_reads.md): each element of the region file goes straight into the
+//! Read 2 of the tile cut: each element of the region file goes straight into the
 //! files of its tiles, once, in the order of the file. Read 1 (parts 1 to 4a of `cut`) gave the plan: the books of the
 //! nodes and the ways, the ways in more tiles, the extra nodes of each tile (sorted rows), the extra ways and the tiles
 //! of the relations. No part files, no part 5.

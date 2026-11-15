@@ -14,7 +14,7 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
       - uses: Swatinem/rust-cache@v2
-      - name: Tests (unit tests and the golden tests against duckOSM e3ce06a)
+      - name: Tests (unit tests and the golden tests)
         run: cargo test --release
       - name: Build for WebAssembly
         run: cargo build --release --lib --target wasm32-unknown-unknown

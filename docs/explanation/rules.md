@@ -23,5 +23,4 @@ The cut reads the file two times.
   tiles of each relation. The large lists go to temporary files.
 - Read 2 writes each element into the files of its tiles, once, in the order of the input file.
 
-The memory does not grow with the number of tiles, and the elements are never all in memory. The design of the two
-reads is in duckOSM, [docs/design/tile_cut_two_reads.md](https://github.com/Khoshkhah/duckOSM/blob/main/docs/design/tile_cut_two_reads.md).
+The elements are never all in memory, and the memory does not grow with the number of tiles.
