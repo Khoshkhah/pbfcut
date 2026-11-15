@@ -75,5 +75,5 @@ You must have Rust and its package manager Cargo. To install them, follow the st
 ## Next steps
 
 - Add `--boundary area.geojson` to keep only the nodes inside an area.
-- Add `--steps` to see the time and the memory of each step of the cut.
+- Add `--steps` to see the time of each step of the cut.
 - Use `--tiles` with a list of tiles of different zooms ([The command line](../reference/cli.md)).
