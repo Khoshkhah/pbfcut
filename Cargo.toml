@@ -1,0 +1,23 @@
+[package]
+name = "pbfcut"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+authors = ["Kaveh Khoshkhah"]
+description = "Cut an OpenStreetMap .osm.pbf file into map tiles or areas, with one read for all outputs"
+repository = "https://github.com/Khoshkhah/pbfcut"
+
+[dependencies]
+# the zlib blobs of the input: zlib-rs is a pure-Rust zlib that also builds for WebAssembly
+flate2 = { version = "1.1", default-features = false, features = ["zlib-rs"] }
+# the zlib blobs of the output: pure Rust, so every target writes the same bytes
+miniz_oxide = "0.8"
+# the blocks are decoded on all threads
+rayon = "1.12"
+# the boundary (GeoJSON)
+serde_json = "1"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 16

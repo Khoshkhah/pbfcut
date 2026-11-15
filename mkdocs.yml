@@ -1,0 +1,25 @@
+site_name: pbfcut
+site_url: https://khoshkhah.github.io/pbfcut/manual/
+repo_url: https://github.com/Khoshkhah/pbfcut
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      toggle: { icon: material/brightness-7, name: Dark mode }
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      toggle: { icon: material/brightness-4, name: Light mode }
+markdown_extensions:
+  - tables
+  - admonition
+  - pymdownx.superfences
+nav:
+  - Home: index.md
+  - Tutorials:
+      - Cut a file into tiles: tutorials/cut-to-tiles.md
+  - Reference:
+      - The command line: reference/cli.md
+  - Explanation:
+      - The rules of the cut: explanation/rules.md
+      - Design: design.md

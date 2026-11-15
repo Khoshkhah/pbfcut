@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - name: Tests (unit tests and the golden tests against duckOSM e3ce06a)
+        run: cargo test --release
+      - name: Build for WebAssembly
+        run: cargo build --release --lib --target wasm32-unknown-unknown
+      - name: The command line on Monaco
+        run: |
+          cargo run --release -- tiles tests/data/monaco.osm.pbf --zoom 14 --boundary tests/data/monaco.geojson -o out1 > out1.json
+          cargo run --release -- tiles tests/data/monaco.osm.pbf --zoom 14 --boundary tests/data/monaco.geojson -o out2 > out2.json
+          cargo run --release -- compare out1 out2
+
+  manual:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install "mkdocs==1.6.*" "mkdocs-material==9.*"
+      - run: mkdocs build --strict

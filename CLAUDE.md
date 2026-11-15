@@ -1,0 +1,57 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## What this is
+
+`pbfcut` is a Rust library and command. It cuts an OpenStreetMap `.osm.pbf` file into map tiles or areas. One read of the input gives all outputs. Each output is a complete `.osm.pbf` file: the nodes in the area, each way with a node there (with all its nodes), and the relations with a member there.
+
+The code comes from duckOSM `rust/duckosm-core` at commit `e3ce06a`. duckOSM and duckOSM Studio use this crate as a Git dependency at one `rev`.
+
+`docs/design.md` is the source of truth for scope and decisions. Status: only the `tiles` and `compare` commands exist. H3 cells and GeoJSON area lists (osmium-style extracts) are planned and not in the code. The files in `docs/concepts/` and `docs/design/` that the code comments name are in duckOSM, not in this repository.
+
+## Commands
+
+```bash
+cargo build --release
+cargo test --release                                  # unit tests and the golden tests
+cargo test --release --test golden tile_files_equal_duckosm   # one test
+cargo clippy --release
+```
+
+Run the command:
+
+```bash
+cargo run --release -- tiles tests/data/monaco.osm.pbf --zoom 14 --boundary tests/data/monaco.geojson -o out/
+cargo run --release -- compare DIR_A DIR_B           # exit 1 if the elements of the .osm.pbf files differ
+```
+
+`tiles` takes `--zoom Z` or `--tiles LIST.txt` (one `z/x/y` on each line, no tile inside another tile of the list). `--complete` sets the relation types that the cut keeps whole (default `multipolygon,boundary`). `--steps` prints the time of each step to standard error.
+
+## Golden tests
+
+`tests/golden.rs` compares the output with hashes of duckOSM's output at `e3ce06a` (`tests/golden/duckosm-e3ce06a.txt`). The input is `tests/data/monaco.osm.pbf`. The hash covers the blocks after the header block, because the header names the program.
+
+If a golden test fails, a change altered the result. Find the cause. **Never edit the golden file to make a test pass.**
+
+`tools/golden` makes the golden file. It is a separate Cargo workspace, and it depends on duckOSM by Git `rev`. You run it one time. The command is in its `Cargo.toml`.
+
+## Architecture
+
+The library (`src/lib.rs`) has one module for each job. The command in `src/main.rs` is thin: it parses arguments and calls the library.
+
+- `decode`: reads the data blocks of a `.osm.pbf` file in place, with no owned objects. It gives the elements to a `RawSink` (`elements`). `read_block` and `decode_block` are the entry points.
+- `write`: `PbfWriter` writes the output. Blocks have 8000 elements, with no metadata, and the header says `Sort.Type_then_ID`.
+- `boundary`: GeoJSON Polygon or MultiPolygon, with point-in-area tests by latitude band. `WORLD` is a boundary that holds every point.
+- `tiles`: the Web Mercator tile grid and `tiles(boundary, z)`. Change the tile rule in this one function.
+- `extract`: the cut of one area (`cut_to_pbf`, `cut_where`) in four passes. The input must be sorted by type, then id (as the files of Geofabrik).
+- `tilecut` (and `tilecut/write.rs`): the cut to many tiles. It is the largest module. It reads the file two times. Read 1 only makes a plan. Read 2 writes each element straight into the files of its tiles. The cut keeps the tile of each node in memory as compressed runs of ids (`Book`). `cut_to_tiles` writes files to a folder. `cut_to_store` and `cut_to_sink` keep the tile files in a temporary store.
+- `store`: rows in temporary files, with an external sort that has a memory budget. The large lists of the cut live here, so they do not stay in memory.
+
+## Rules that are easy to break
+
+- **The output bytes must not depend on the target.** zlib output uses `miniz_oxide` (pure Rust). zlib input uses `flate2` with `zlib-rs`. Do not change these for a faster native library. The native build and the WebAssembly build must write the same file.
+- **The code runs natively and on `wasm32`.** The paths with `#[cfg(target_arch = "wasm32")]` use a `Store` of the page (OPFS) and not temporary folders. Keep both paths working.
+- **Memory is the main limit.** The cut keeps lists of ids, never the elements. A change that holds elements in memory can make large inputs (France, Sweden) fail.
+- **Behavior must equal duckOSM.** One known difference from `osmium extract`: a node exactly on a tile border goes to one tile, not two.
+- Code comments and docs use ASD-STE100 Simplified Technical English (see the global instructions).
