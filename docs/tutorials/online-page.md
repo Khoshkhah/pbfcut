@@ -29,8 +29,9 @@ folder. On a phone, the page downloads one file at a time.
     - **Zoom** (tiles) or **Resolution** (H3 cells): the size of the tiles or cells. The list shows the size of each.
     - **Border (m)**: each tile file also gets the data in this border around the tile (default 0).
     - **Threads**: the number of threads of the cut. The default is the number of cores of the computer.
-    - **Boundary** (optional): a GeoJSON file with a Polygon or a MultiPolygon. With no boundary, the tiles cover the
-      bounding box in the header of the file.
+    - **Boundary** (optional for tiles and cells, necessary for one area): a GeoJSON file in longitude and latitude
+      (WGS 84) with a Polygon, a MultiPolygon, a Feature or a FeatureCollection. All its polygons together are the
+      area. With no boundary, the tiles or cells cover the bounding box in the header of the file.
 5. Click **Cut**. The page shows the time, the step, the WebAssembly memory and the storage of the site. Each step
    of the cut gets a check mark and its time. **Stop** stops the cut.
 6. Click **Save all to a folder**, and select a folder. The page writes one file for each tile, for example

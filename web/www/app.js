@@ -82,12 +82,12 @@ const HELP = {
   settings: ["Settings", [
     ["Tiles", "The square tiles of web maps. One file for each tile: z_x_y.osm.pbf."],
     ["H3 cells", "The hexagons of the H3 grid. One file for each cell, named with its H3 index."],
-    ["One area", "No grid: one file with the data inside the boundary."],
+    ["One area", "No grid: one .osm.pbf file with the data inside the boundary. Select the boundary below."],
     ["Zoom", "The size of a tile, at the equator. At latitude 60° a tile is half as wide and half as high."],
     ["Resolution", "The mean area of an H3 cell."],
     ["Border", "Each file also gets the data this many metres around its tile or cell."],
     ["Threads", "The number of threads of the cut. Default: the number of cores."],
-    ["Boundary", "A GeoJSON Polygon or MultiPolygon. Optional for tiles and cells (default: the bounding box of the file), necessary for one area."],
+    ["Boundary", "A GeoJSON file (.geojson) in longitude and latitude (WGS 84): a Polygon, a MultiPolygon, a Feature or a FeatureCollection. All its polygons together are the area. Optional for tiles and cells (default: the bounding box of the file), necessary for one area."],
   ]],
   progress: ["Progress", [
     ["Memory", "The WebAssembly memory of the cut."],
