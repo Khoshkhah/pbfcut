@@ -18,7 +18,7 @@ Sweden (975 MB) on a Mac mini (12 cores, 16 GB):
 The same code builds for WebAssembly (`wasm32-unknown-unknown`), so a browser page can cut a file.
 
 Planned: H3 cells of one resolution (`pbfcut h3 IN.osm.pbf --res 7`) or of mixed resolutions, GeoJSON areas that can
-overlap (as the extracts of `osmium extract -c`), and a memory limit (`--memory`).
+overlap (as the extracts of `osmium extract -c`).
 
 ## Install and use
 
@@ -33,6 +33,9 @@ Download the `.osm.pbf` file of an area from Geofabrik (https://download.geofabr
 ```bash
 pbfcut tiles sweden-latest.osm.pbf --zoom 8 -o tiles/
 ```
+
+On a computer with little memory, add `--memory 512M`: the cut then uses less memory and more time, and gives the same
+files.
 
 The manual: https://khoshkhah.github.io/pbfcut/manual/ (source in `docs/`). The design and the plan:
 [docs/design.md](docs/design.md).

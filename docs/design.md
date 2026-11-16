@@ -3,8 +3,8 @@
 This document is for developers. It gives the scope of pbfcut, its rules and the plan. The published manual does not
 include it.
 
-Status (2026-11-15): M1 is done. The crate, the commands `tiles` and `compare`, the golden tests, CI and the manual
-exist. The next step is M1b, the memory budget.
+Status (2026-11-15): M1 and M1b are done: the crate, the commands `tiles` and `compare`, the golden tests, CI, the
+manual, and the memory budget. The next step is M2, H3 cells and GeoJSON areas.
 
 ## 1. Purpose
 
@@ -88,38 +88,42 @@ Requirements:
 
 - The peak memory does not grow with the number of areas.
 - The peak memory grows only a little with the size of the input.
-- The peak memory stays in the budget (`--memory`, default 2G). A smaller budget makes the cut use more disk and more
-  time. It does not make the cut fail, down to a minimum that the manual gives (planned: 256M).
+- The peak memory stays near the budget (`--memory`, default 2G). A smaller budget makes the cut use more disk and
+  more time. It does not make the cut fail.
 - All large data goes to temporary files at once, and a step holds only the data that it needs.
 - The bytes of the output files do not change with the budget.
 
-Today the cut uses 1.3 to 1.5 GB for France and 1.5 to 1.8 GB for Sweden. Much of the data is already in temporary
-files: the id files, the extra nodes (sorted rows), the relations, the parts of the tiles. This data is still in
-memory:
+### 4.1 How the cut keeps to the budget
 
-| Data | Grows with | Change |
+`store::memory()` is the budget. The parts of the cut take these shares:
+
+| Data | Share | How |
 |---|---|---|
-| The books of the nodes and the ways (runs of ids, compressed) | the input | In memory while it fits its share of the budget. Else the ways find the areas of their nodes with a sort on disk: the refs (node, way) sorted by node, then a merge with the node book on disk. |
-| The write buffers of the temporary files (1 MiB each) | the number of id ranges | Smaller buffers, or a limit for all buffers. |
-| The sorts (`store::sort`) | the input | They have a budget now (64 MiB). It becomes their share of `--memory`. |
-| The parts that wait before they go to disk | fixed (64 MiB) | Their share of `--memory`. |
-| The blocks in decode | the number of threads | At most one block for each thread and 32 MB, as now. |
-| The lists of read 1 (`near`, `multi`, the homes) | the input | Into sorted rows on disk, as the extra nodes now. |
-| The table of the areas (ids, counts, sets of areas) | the number of areas | Some bytes for each area. It stays in memory. |
+| The sort of the nodes from outside (step 4, read 2) | 1/4 | `store::SortedParts` sorts a bucket (a range of 2^27 node ids) in memory when it fits, else on disk with `store::sort`, and gives its rows in pieces. |
+| The member ways of complete relations in each tile (`more`) | 1/4 (its sort) | Sorted rows on disk, read as a stream by step 3 and by read 2. A boundary goes to every tile with a member, so these pairs grow with the number of tiles. |
+| The rows in flight in read 2 | 1/8 for each batch | A batch has at most `memory / 8 / 512` extra rows. A block with more rows goes in more jobs, one for each range of tiles. A tile is in one job only, and each job sees all rows of the block, so the bytes do not change. |
+| The buffers of a merge on disk | the budget of its sort | `run_buffer`: from 16 KiB to 1 MiB for each run, at most 64 runs at a time. |
+| The write buffers of the buckets | fixed | 64 KiB each, about 100 buckets at most. |
 
-The order of the work: first measure each part on Sweden and France (`tools/measure.sh`), then change only the parts
-that need it. The sort on disk for the books is the last change, because it costs one more read of the refs.
+These parts do not follow the budget yet. They grow with the input, not with the number of tiles:
 
-Measurement and the guard in CI:
+- the books of the nodes and the ways (Sweden: 72 MB, France: 243 MB at zoom 10);
+- the lists of read 1 (`near`, `multi`, the homes) and the tiles of the relations.
 
-- On the Mac mini, natively: the peak RSS and the time for Monaco, Sweden and France, for map tiles at zoom 6, 8, 10
-  and 12, and for `--memory` 512M, 2G and 4G. The results go into the manual.
-- In CI: the test binary counts the bytes that it allocates (a global allocator that keeps the peak). This is exact
-  on every computer, but RSS is not.
-  - The peak heap of the Monaco cuts must stay under the budget in `tests/peak_heap.json`. The budget goes down with
-    each improvement. It goes up only after a review.
-  - The peak heap of Monaco at zoom 17 (many tiles) must be less than 1.2 times the peak at zoom 12 (few tiles).
-  - Monaco with `--memory 16M` gives the same files as the goldens.
+A later change can put the books on disk: the refs (node, way) sorted by node, then a merge with the node book. It
+costs one more read of the refs, so it waits until a measurement asks for it.
+
+### 4.2 Measurement and the guard in CI
+
+- `tools/measure.sh` gives the time, the peak RSS and the peak heap for each input and zoom (time and RSS from a run
+  without `--steps`, because the count of the heap makes the threads slower). The manual has the results.
+- In CI, `tests/memory.rs` counts the bytes that the test binary allocates. This is exact on every computer, but RSS
+  is not.
+  - The peak heap of Monaco at zoom 12 and zoom 17 must stay under the limits in `tests/peak_heap.json`. Lower a
+    limit after an improvement; raise it only after a review of the cause.
+  - Monaco at zoom 17 with a budget of 64 KiB (all sorts on disk, many small jobs) gives the same bytes as with 2G.
+  - There is no test of zoom 17 against zoom 12 on Monaco: the output of zoom 17 is 24 times the output of zoom 12,
+    and the blocks in flight hold their part of it. The growth with the number of tiles is measured on Sweden.
 
 ## 5. The command line
 
@@ -138,7 +142,7 @@ OPTIONS: [--boundary AREA.geojson] [--complete TYPES] [--steps] [--memory SIZE] 
 - `areas`: each feature of the GeoJSON (Polygon, MultiPolygon, or a `bbox` member) is one area and one output, as
   the extracts of `osmium extract -c`. The file name comes from the property `name` of the feature, else from its
   number.
-- `--memory SIZE` (M1b): the memory budget. `--temp DIR` (M1b): the folder of the temporary files.
+- `--memory SIZE`: the memory budget. `--temp DIR`: the folder of the temporary files.
 - Every command writes the numbers of elements of each output to standard output as JSON.
 
 ## 6. The manual, GitHub Pages and the online page
@@ -186,8 +190,8 @@ command line.
 ## 8. Steps
 
 1. **M1, done.** The crate, `tiles` and `compare`, the golden tests, CI, the manual and Pages.
-2. **M1b, the memory budget.** The measurement, `--memory`, `--temp`, the changes of section 4 that the measurement
-   asks for, and the peak-heap guard in CI.
+2. **M1b, done.** The memory budget (section 4), `--memory`, `--temp`, the heap in `--steps`, and the peak-heap guard
+   in CI.
 3. **M2, H3 cells and GeoJSON areas.** The function "the areas of a point" for H3 and for GeoJSON, the sets of areas
    for overlap, the commands `h3` and `areas`, their golden tests, and a measurement against osmium on Sweden with the
    same areas.
