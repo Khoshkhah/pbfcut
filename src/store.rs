@@ -338,7 +338,7 @@ pub fn sort_bytes_where<K: Ord + Send>(
 
 /// [`sort_bytes`] for rows that are read one time: the rows in the order of `key` (stable), merged from the sorted runs
 /// while they are read. No merged copy is written: one write and one read of all rows less, and no time with the runs
-/// and their copy on the disk together (the cut of France: part 4c had 1.5 GB of runs and wrote 1.5 GB more). The key
+/// and their copy on the disk together (the cut of France: step 5b had 1.5 GB of runs and wrote 1.5 GB more). The key
 /// can borrow: the rows live as long as it does.
 pub fn sorted<'a, K: Ord + Send + 'a, T: 'a, C: Codec<T>>(
     rows: Rows,
