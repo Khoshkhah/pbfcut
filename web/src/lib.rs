@@ -10,6 +10,12 @@ use pbfcut::boundary::{Boundary, WORLD};
 use pbfcut::store::{Blob, Store};
 use wasm_bindgen::prelude::*;
 
+#[cfg(feature = "threads")]
+mod alloc;
+#[cfg(feature = "threads")]
+#[global_allocator]
+static ALLOC: alloc::PerThread = alloc::PerThread;
+
 /// `initThreadPool(n)` in JavaScript: n Web Workers for rayon (the build with the feature "threads").
 #[cfg(feature = "threads")]
 pub use wasm_bindgen_rayon::init_thread_pool;
