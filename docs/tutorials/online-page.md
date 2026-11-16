@@ -41,8 +41,7 @@ does not let the service worker run, the page uses one thread, and it says so un
 
 ## Speed
 
-The command line is about 1.6 times faster than the online page. Sweden (975 MB) at zoom 8, with 12 threads on a Mac
-mini (12 cores): `pbfcut tiles` takes 12.7 s, and the page takes 19.8 s in Chromium.
+The command line is about 1.6 times faster than the online page (see [Comparison](../explanation/comparison.md)).
 
 ## Limits
 

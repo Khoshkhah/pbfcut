@@ -3,15 +3,7 @@
 All numbers are from a Mac mini (12 cores, 16 GB) with the Geofabrik files of Sweden (975 MB) and France (5.1 GB). The
 cut writes all tiles in one read of the file.
 
-## Comparison with osmium
-
-| Sweden | pbfcut | osmium-tool 1.19.1 `extract -c -s smart -S types=multipolygon,boundary` |
-|---|---|---|
-| zoom 6, 21 tiles | 11.2 s, 1.8 GB | 50.9 s, 9.8 GB |
-| zoom 8, 206 tiles | 15.2 s, 1.5 GB | stopped after 378 s (218 GB peak footprint), no data |
-
-osmium keeps a set of ids for each extract, so its memory grows with the number of tiles. pbfcut keeps the tile of each
-node in one compressed list for all tiles.
+For the comparison with osmium and with the online page, see [Comparison](comparison.md).
 
 ## Memory by zoom
 
