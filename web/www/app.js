@@ -54,8 +54,8 @@ $("region").addEventListener("input", async () => {
     $("link").title = region.pbf.split("/").pop();
     // Geofabrik sends no CORS headers: a web page can read its files only through a relay
     $("get").disabled = !relay;
-    $("get-text").textContent = relay ? "" : "Get is not available: Geofabrik does not let other web pages read its files "
-      + "(it sends no CORS headers), and this page has no relay. Use Download.";
+    $("get").title = relay ? "Put the file into the storage of this site" : "Not available: Geofabrik sends no CORS headers";
+    $("get-text").textContent = "";
     const kept = await (await regionsDir()).getFileHandle(fileName(region.id)).then((h) => h.getFile(), () => null);
     if (kept) {
       regionReady = true;
