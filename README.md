@@ -20,17 +20,27 @@
 
 ## Install
 
-You must have Rust (https://rustup.rs):
+You must have Rust and Cargo. If you do not have them, install them with rustup (https://rustup.rs), then load Cargo
+in the terminal that you use:
+
+```bash
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+. "$HOME/.cargo/env"            # a new terminal does this by itself
+cargo --version                 # must print a version
+```
+
+Then install pbfcut:
 
 ```bash
 cargo install --git https://github.com/Khoshkhah/pbfcut
 ```
 
-Cargo puts the command `pbfcut` in `~/.cargo/bin`. The installer of Rust (rustup) adds this folder to `PATH`. Open a new
-terminal after the installation. If the shell says `pbfcut: command not found`, add the folder to `PATH`:
+Cargo puts the command `pbfcut` in `~/.cargo/bin`. rustup adds this folder to `PATH` in a new terminal. If the shell
+says `cargo: command not found` or `pbfcut: command not found`, run `. "$HOME/.cargo/env"`, or add this line to
+`~/.bashrc` or `~/.zshrc`:
 
 ```bash
-export PATH="$HOME/.cargo/bin:$PATH"     # add this line to ~/.bashrc or ~/.zshrc
+export PATH="$HOME/.cargo/bin:$PATH"
 ```
 
 ## Use

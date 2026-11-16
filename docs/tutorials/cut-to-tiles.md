@@ -5,7 +5,13 @@ than one second.
 
 ## Before you start
 
-You must have Rust and its package manager Cargo. To install them, follow the steps on https://rustup.rs.
+You must have Rust and its package manager Cargo. To install them, follow the steps on https://rustup.rs. Then load
+Cargo in your terminal (a new terminal does this by itself):
+
+```bash
+. "$HOME/.cargo/env"
+cargo --version      # must print a version
+```
 
 ## Procedure
 
