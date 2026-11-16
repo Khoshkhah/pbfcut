@@ -52,8 +52,9 @@
 }
 
 /* Mermaid measures each box before the web font is loaded: a system font has the same width when it measures and when it
-   draws, so no text runs past its box */
-:root { --md-mermaid-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
+   draws, so no text runs past its box. Material sets this variable on ":root > *", so the same selector is necessary
+   here (on ":root" only, the body keeps the font of the text, and the text runs past its box) */
+:root > * { --md-mermaid-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; }
 
 /* the open page in the left menu and the section in view in the right list: bold, in the accent colour */
 .md-nav__link--active, .md-nav__item--active > .md-nav__link, .md-nav__item--active > .md-nav__container > .md-nav__link { color: var(--pc-nav-on) !important; font-weight: 600; }
