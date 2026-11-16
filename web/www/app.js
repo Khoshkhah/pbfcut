@@ -83,7 +83,7 @@ const HELP = {
     ["Resolution", "The mean area of an H3 cell."],
     ["Border", "Each file also gets the data this many metres around its tile or cell."],
     ["Threads", "The number of threads of the cut. Default: the number of cores."],
-    ["Boundary", "Optional: a GeoJSON file; the cut keeps only the data inside it. Without it, tiles and cells cover the bounding box of the file."],
+    ["Boundary", "Optional: a GeoJSON, .poly (osmosis) or WKT file; the cut keeps only the data inside it. Without it, tiles and cells cover the bounding box of the file."],
     ["GeoJSON", "In longitude and latitude (WGS 84): a Polygon, a MultiPolygon, a Feature or a FeatureCollection."],
   ]],
   progress: ["Progress", [
