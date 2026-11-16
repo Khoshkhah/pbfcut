@@ -150,45 +150,24 @@ fn setup(size: f64, memory_mib: u32) -> impl Fn() -> Result<io::BufReader<Input>
     move || Ok(io::BufReader::with_capacity(4 << 20, Input { pos: 0, len }))
 }
 
-/// The output file of [`cut_area`]: its bytes go to `pbfcut.tile_write` as file 0.
-struct AreaFile;
-
-impl Write for AreaFile {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        tile_write(0, buf).map_err(io_err)?;
-        Ok(buf.len())
-    }
-    fn flush(&mut self) -> io::Result<()> {
-        Ok(())
-    }
-}
-
-/// Cut the input file (`size` bytes) to one area, `boundary` (GeoJSON), as `pbfcut::extract::cut_to_pbf`: one
-/// `.osm.pbf` file named `name`. Gives the JSON report of [`cut`], with one file.
-#[wasm_bindgen]
-pub fn cut_area(size: f64, boundary: &str, name: &str, memory_mib: u32) -> Result<String, JsValue> {
-    let open = setup(size, memory_mib);
-    let area = Boundary::parse(boundary)?;
-    let started = js_sys_now();
-    let (w, c) = pbfcut::extract::cut_to_pbf(open, &area, io::BufWriter::with_capacity(1 << 20, AreaFile))?;
-    w.into_inner().map_err(|e| format!("the area file in OPFS: {e}"))?;
-    Ok(format!(
-        r#"{{"tiles":1,"files":[{{"index":0,"tile":"area","file":"{}","nodes":{},"ways":{},"relations":{}}}],"seconds":{}}}"#,
-        name.replace(['"', '\\', '/'], "_"),
-        c.nodes,
-        c.ways,
-        c.relations,
-        (js_sys_now() - started) / 1000.0
-    ))
-}
-
-/// Cut the input file (`size` bytes) into the map tiles of zoom `level` (`grid` "tiles"), or into the H3 cells of
-/// resolution `level` (`grid` "h3"), inside `boundary` (GeoJSON; none: the bounding box in the header of the file).
+/// Cut the input file (`size` bytes) into the map tiles of zoom `level` (`grid` "tiles"), into the H3 cells of
+/// resolution `level` (`grid` "h3"), or into the areas of the GeoJSON `areas` (`grid` "areas", one file for each
+/// feature, named by its property "name", as `pbfcut areas`), inside `boundary` (GeoJSON; none: the bounding box in the header of the file).
 /// `border_m`: the border of each file in metres. `complete`: the types of the relations to complete, separated by
 /// commas. `memory_mib`: the memory budget of the cut (0: the default of the library). The files go to
 /// `pbfcut.tile_write`. Gives the JSON report of the command `pbfcut tiles` or `pbfcut h3`, with the number of each file.
 #[wasm_bindgen]
-pub fn cut(size: f64, grid: &str, level: u8, boundary: Option<String>, border_m: f64, complete: &str, memory_mib: u32) -> Result<String, JsValue> {
+#[allow(clippy::too_many_arguments)]
+pub fn cut(
+    size: f64,
+    grid: &str,
+    level: u8,
+    boundary: Option<String>,
+    border_m: f64,
+    complete: &str,
+    memory_mib: u32,
+    areas: Option<String>,
+) -> Result<String, JsValue> {
     let open = setup(size, memory_mib);
     let area = match &boundary {
         Some(b) => Boundary::parse(b)?,
@@ -205,7 +184,12 @@ pub fn cut(size: f64, grid: &str, level: u8, boundary: Option<String>, border_m:
     let mut sink = |t: u32, b: &[u8]| tile_write(t, b).map_err(|e| format!("a file in OPFS: {e:?}"));
     let started = js_sys_now();
     // (the name of each tile or cell, its file name), and the numbers of elements
-    let (names, counts): (Vec<(String, String)>, _) = if grid == "h3" {
+    let (names, counts): (Vec<(String, String)>, _) = if grid == "areas" {
+        let text = areas.ok_or("give the GeoJSON file of the areas")?;
+        let list = pbfcut::areas::AreaList::parse(&text, "name", &|f| Err(format!("{f}: the page reads one GeoJSON file only")))?;
+        let counts = pbfcut::tilecut::cut_areas_to_sink(open, inside, &list, &complete, &mut sink)?;
+        (list.areas.iter().map(|a| (a.name.clone(), format!("{}.osm.pbf", a.name))).collect(), counts)
+    } else if grid == "h3" {
         let res = pbfcut::cells::Resolution::try_from(level).map_err(|e| format!("the H3 resolution {level}: {e}"))?;
         let list = pbfcut::cells::cells(&area, res);
         let counts = pbfcut::tilecut::cut_cells_to_sink(open, inside, &list, &complete, border_m, &mut sink)?;

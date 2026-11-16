@@ -41,6 +41,7 @@ pbfcut h3 sweden-latest.osm.pbf --res 5 -o cells/         # cells/<cell index>.o
 | `pbfcut tiles IN.osm.pbf --zoom Z -o DIR` | one file for each map tile of zoom `Z` |
 | `pbfcut tiles IN.osm.pbf --tiles LIST.txt -o DIR` | one file for each tile of a list (also of different zooms) |
 | `pbfcut h3 IN.osm.pbf --res R -o DIR` | one file for each H3 cell of resolution `R` |
+| `pbfcut areas IN.osm.pbf --areas AREA.geojson -o DIR` | one area: one file with the data inside the area (a FeatureCollection with one feature) |
 | `pbfcut areas IN.osm.pbf --areas AREAS.geojson -o DIR` | one file for each area of a list (as `osmium extract -c`; the areas can overlap) |
 | `pbfcut compare DIR_A DIR_B` | exit code 1 if the files of the two folders have different elements |
 
