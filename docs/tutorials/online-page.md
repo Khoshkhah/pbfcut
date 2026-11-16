@@ -35,6 +35,11 @@ Threads need a page that is cross-origin isolated. GitHub Pages cannot send the 
 so a service worker of the page adds them. The page loads two times when you open it for the first time. If the browser
 does not let the service worker run, the page uses one thread, and it says so under the settings.
 
+## Speed
+
+The command line is about 1.6 times faster than the online page. Sweden (975 MB) at zoom 8, with 12 threads on a Mac
+mini (12 cores): `pbfcut tiles` takes 12.7 s, and the page takes 19.8 s in Chromium.
+
 ## Limits
 
 - The WebAssembly memory has a maximum of 4 GiB.
