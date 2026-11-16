@@ -1,5 +1,11 @@
-//! A boundary: a GeoJSON Polygon or MultiPolygon, also inside a Feature or a FeatureCollection. The cut keeps the
-//! nodes inside it.
+//! A boundary: the area of a cut. The cut keeps the nodes inside it. [`Boundary::parse`] reads these formats and finds the
+//! format from the text:
+//!
+//! - GeoJSON: a Polygon or a MultiPolygon, also inside a Feature or a FeatureCollection, or a Feature with a `bbox`
+//!   member and no geometry;
+//! - an osmosis polygon file (`.poly`, as on Geofabrik);
+//! - WKT: `POLYGON` or `MULTIPOLYGON`;
+//! - a box: `W,S,E,N` (west, south, east, north, in degrees).
 
 use serde_json::Value;
 
@@ -64,13 +70,45 @@ impl Bands {
 }
 
 impl Boundary {
-    pub fn parse(geojson: &str) -> Result<Boundary, String> {
-        let v: Value = serde_json::from_str(geojson).map_err(|e| format!("boundary: {e}"))?;
+    /// A boundary from GeoJSON, a polygon file, WKT or a box `W,S,E,N`: the first character of the text gives the format.
+    pub fn parse(text: &str) -> Result<Boundary, String> {
+        let t = text.trim_start();
+        if t.starts_with('{') {
+            let v: Value = serde_json::from_str(t).map_err(|e| format!("boundary: {e}"))?;
+            return Boundary::from_geojson(&v);
+        }
+        let head = t.get(..12).unwrap_or(t).to_ascii_uppercase();
+        if head.starts_with("POLYGON") || head.starts_with("MULTIPOLYGON") {
+            return Boundary::from_polygons(wkt(t)?, None);
+        }
+        if t.starts_with(|c: char| c == '-' || c.is_ascii_digit()) && !t.trim().contains('\n') {
+            return Boundary::from_box(t);
+        }
+        let (polygons, name) = poly(t)?;
+        Boundary::from_polygons(polygons, name)
+    }
+
+    /// A boundary from a GeoJSON value.
+    pub fn from_geojson(v: &Value) -> Result<Boundary, String> {
         let mut polygons = Vec::new();
         let mut name = None;
-        collect(&v, &mut polygons, &mut name)?;
+        collect(v, &mut polygons, &mut name)?;
+        Boundary::from_polygons(polygons, name)
+    }
+
+    /// A box from the text `W,S,E,N` (west, south, east, north, in degrees).
+    pub fn from_box(text: &str) -> Result<Boundary, String> {
+        let v: Vec<f64> = text.split(',').map(|n| n.trim().parse::<f64>()).collect::<Result<_, _>>().map_err(|_| format!("boundary: not a box W,S,E,N: {text}"))?;
+        let [w, s, e, n] = v[..] else { return Err(format!("boundary: not a box W,S,E,N: {text}")) };
+        if w >= e || s >= n {
+            return Err(format!("boundary: the box {text} is empty (W must be less than E and S less than N)"));
+        }
+        Boundary::from_polygons(vec![vec![rect(w, s, e, n)]], None)
+    }
+
+    fn from_polygons(polygons: Vec<Vec<Ring>>, name: Option<String>) -> Result<Boundary, String> {
         if polygons.is_empty() {
-            return Err("boundary: no Polygon or MultiPolygon in the GeoJSON".into());
+            return Err("boundary: no polygon".into());
         }
         let pts = polygons.iter().flatten().flatten();
         let bbox = pts.fold((f64::MAX, f64::MAX, f64::MIN, f64::MIN), |b, &(x, y)| {
@@ -234,6 +272,153 @@ fn degrees(v: f64) -> f64 {
     1e-9 * ((v * 1e9).round() as i64) as f64
 }
 
+/// The ring of a box.
+fn rect(w: f64, s: f64, e: f64, n: f64) -> Ring {
+    [(w, s), (e, s), (e, n), (w, n), (w, s)].into_iter().map(|(x, y)| (degrees(x), degrees(y))).collect()
+}
+
+/// An osmosis polygon file: a name line, then sections, each a name line, one `longitude latitude` on each line, and
+/// `END`; a last `END`. A section with a name that starts with `!` is a hole: it goes to the polygon that holds its
+/// first point.
+fn poly(text: &str) -> Result<(Vec<Vec<Ring>>, Option<String>), String> {
+    let bad = |l: &str| format!("boundary: not a polygon file (the line \"{l}\")");
+    let mut lines = text.lines().map(str::trim).filter(|l| !l.is_empty());
+    let name = lines.next().map(str::to_string);
+    let mut polygons: Vec<Vec<Ring>> = Vec::new();
+    let mut holes: Vec<Ring> = Vec::new();
+    loop {
+        let section = lines.next().ok_or("boundary: a polygon file without the last END")?;
+        if section == "END" {
+            break;
+        }
+        let mut r = Ring::new();
+        loop {
+            let l = lines.next().ok_or("boundary: a polygon file section without END")?;
+            if l == "END" {
+                break;
+            }
+            let mut p = l.split_whitespace().map(str::parse::<f64>);
+            match (p.next(), p.next(), p.next()) {
+                (Some(Ok(x)), Some(Ok(y)), None) => r.push((degrees(x), degrees(y))),
+                _ => return Err(bad(l)),
+            }
+        }
+        if r.len() < 3 {
+            return Err(format!("boundary: the polygon file section {section} has less than 3 points"));
+        }
+        if section.starts_with('!') {
+            holes.push(r);
+        } else {
+            polygons.push(vec![r]);
+        }
+    }
+    for h in holes {
+        let p = polygons.iter().position(|p| inside_ring(h[0], &p[0])).ok_or("boundary: a hole of the polygon file is in no polygon")?;
+        polygons[p].push(h);
+    }
+    Ok((polygons, name))
+}
+
+/// Is the point inside the ring (even-odd)?
+fn inside_ring(p: (f64, f64), ring: &Ring) -> bool {
+    let mut inside = false;
+    for k in 0..ring.len() {
+        let (a, b) = (ring[k], ring[(k + 1) % ring.len()]);
+        if (a.1 > p.1) != (b.1 > p.1) && p.0 < (b.0 - a.0) * (p.1 - a.1) / (b.1 - a.1) + a.0 {
+            inside = !inside;
+        }
+    }
+    inside
+}
+
+/// WKT `POLYGON ((x y, ...), (...))` or `MULTIPOLYGON (((x y, ...)), ...)`.
+fn wkt(text: &str) -> Result<Vec<Vec<Ring>>, String> {
+    let bad = || format!("boundary: not a WKT POLYGON or MULTIPOLYGON: {}", text.get(..40).unwrap_or(text));
+    let t = text.trim();
+    let open = t.find('(').ok_or_else(bad)?;
+    let kind = t[..open].trim().to_ascii_uppercase();
+    // the list of lists of rings: one level more for MULTIPOLYGON
+    let depth = match kind.as_str() {
+        "POLYGON" => 2,
+        "MULTIPOLYGON" => 3,
+        _ => return Err(bad()),
+    };
+    let mut b = &t.as_bytes()[open..];
+    let tree = wkt_list(&mut b, depth).ok_or_else(bad)?;
+    if !std::str::from_utf8(b).map_err(|_| bad())?.trim().is_empty() {
+        return Err(bad());
+    }
+    Ok(match tree {
+        Wkt::List(v) if depth == 2 => vec![v.into_iter().map(Wkt::ring).collect::<Option<_>>().ok_or_else(bad)?],
+        Wkt::List(v) => v
+            .into_iter()
+            .map(|p| match p {
+                Wkt::List(rings) => rings.into_iter().map(Wkt::ring).collect::<Option<Vec<Ring>>>(),
+                Wkt::Ring(_) => None,
+            })
+            .collect::<Option<_>>()
+            .ok_or_else(bad)?,
+        Wkt::Ring(_) => return Err(bad()),
+    })
+}
+
+enum Wkt {
+    List(Vec<Wkt>),
+    Ring(Ring),
+}
+
+impl Wkt {
+    fn ring(self) -> Option<Ring> {
+        match self {
+            Wkt::Ring(r) => Some(r),
+            Wkt::List(_) => None,
+        }
+    }
+}
+
+/// One `( ... )` of WKT at `depth` (1: a list of points).
+fn wkt_list(b: &mut &[u8], depth: u8) -> Option<Wkt> {
+    let skip = |b: &mut &[u8]| {
+        while b.first().is_some_and(u8::is_ascii_whitespace) {
+            *b = &b[1..];
+        }
+    };
+    skip(b);
+    if b.first() != Some(&b'(') {
+        return None;
+    }
+    *b = &b[1..];
+    let close = b.iter().position(|&c| c == b')')?;
+    if depth == 1 {
+        let inner = std::str::from_utf8(&b[..close]).ok()?;
+        *b = &b[close + 1..];
+        let ring = inner
+            .split(',')
+            .map(|p| {
+                let mut n = p.split_whitespace().map(str::parse::<f64>);
+                match (n.next(), n.next()) {
+                    (Some(Ok(x)), Some(Ok(y))) => Some((degrees(x), degrees(y))),
+                    _ => None,
+                }
+            })
+            .collect::<Option<Ring>>()?;
+        return (ring.len() >= 3).then_some(Wkt::Ring(ring));
+    }
+    let mut items = Vec::new();
+    loop {
+        items.push(wkt_list(b, depth - 1)?);
+        skip(b);
+        match b.first()? {
+            b',' => *b = &b[1..],
+            b')' => {
+                *b = &b[1..];
+                return Some(Wkt::List(items));
+            }
+            _ => return None,
+        }
+    }
+}
+
 fn ring(v: &Value) -> Result<Ring, String> {
     v.as_array()
         .ok_or("boundary: a ring must be a list")?
@@ -275,8 +460,14 @@ fn collect(v: &Value, out: &mut Vec<Vec<Ring>>, name: &mut Option<String>) -> Re
                     .and_then(Value::as_str)
                     .map(str::to_string);
             }
-            if let Some(g) = v.get("geometry") {
-                collect(g, out, name)?;
+            match (v.get("geometry").filter(|g| !g.is_null()), v.get("bbox").and_then(Value::as_array)) {
+                (Some(g), _) => collect(g, out, name)?,
+                // no geometry: the box of the `bbox` member
+                (None, Some(b)) => match b.iter().map(Value::as_f64).collect::<Option<Vec<f64>>>().as_deref() {
+                    Some(&[w, s, e, n]) => out.push(vec![rect(w, s, e, n)]),
+                    _ => return Err("boundary: a bbox must be [west, south, east, north]".into()),
+                },
+                (None, None) => {}
             }
         }
         Some("Polygon") => out.push(polygon(&v["coordinates"])?),
@@ -339,6 +530,30 @@ mod tests {
             for &(x, y) in &pts {
                 assert_eq!(b.contains(x, y), b.contains_all(x, y), "({x}, {y})");
             }
+        }
+    }
+
+    /// The same square with a hole in each format gives the same answers.
+    #[test]
+    fn the_formats_give_the_same_area() {
+        let poly = "square\n1\n  0 0\n  10 0\n  10 10\n  0 10\nEND\n!hole\n  4 4\n  6 4\n  6 6\n  4 6\nEND\n2\n  20 0\n  30 0\n  25 5\nEND\nEND\n";
+        let wkt = "MULTIPOLYGON (((0 0, 10 0, 10 10, 0 10, 0 0), (4 4, 6 4, 6 6, 4 6, 4 4)), ((20 0, 30 0, 25 5, 20 0)))";
+        let json = r#"{"type":"MultiPolygon","coordinates":[[[[0,0],[10,0],[10,10],[0,10],[0,0]],[[4,4],[6,4],[6,6],[4,6],[4,4]]],
+            [[[20,0],[30,0],[25,5],[20,0]]]]}"#;
+        let p = Boundary::parse(poly).unwrap();
+        assert_eq!(p.name.as_deref(), Some("square"));
+        for b in [p, Boundary::parse(wkt).unwrap(), Boundary::parse(json).unwrap()] {
+            assert!(b.contains(1.0, 1.0) && b.contains(25.0, 2.0));
+            assert!(!b.contains(5.0, 5.0) && !b.contains(15.0, 1.0) && !b.contains(25.0, 6.0));
+        }
+        let w = Boundary::parse("POLYGON((0 0, 10 0, 10 10, 0 0))").unwrap();
+        assert!(w.contains(9.0, 1.0) && !w.contains(1.0, 9.0));
+        let b = Boundary::parse("7.40,43.72, 7.44,43.76").unwrap();
+        assert!(b.contains(7.42, 43.73) && !b.contains(7.45, 43.73));
+        let f = Boundary::parse(r#"{"type":"Feature","bbox":[0,0,2,2],"geometry":null,"properties":{}}"#).unwrap();
+        assert!(f.contains(1.0, 1.0) && !f.contains(3.0, 1.0));
+        for bad in ["1,2,3", "5,0,1,1", "POLYGON ((0 0, 1 1))", "POLYGON ((0 0, 1 0, 1 1)", "name\n1\n0 0\n1 0\nEND\nEND", "x\n1\n  0 0\n"] {
+            assert!(Boundary::parse(bad).is_err(), "{bad}");
         }
     }
 }

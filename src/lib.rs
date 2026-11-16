@@ -2,6 +2,7 @@
 //! (docs/design.md). Each output is a complete `.osm.pbf` file: the nodes in the area, each way with a node there with
 //! all its nodes, and the relations with a member there.
 
+pub mod areas;
 pub mod boundary;
 pub mod cells;
 pub mod decode;

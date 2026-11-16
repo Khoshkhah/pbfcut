@@ -42,6 +42,20 @@ times can be a little long.
 The cut of the cells is the cut of the tiles, so the memory follows the budget and not the number of cells. With
 `--memory 512M`, the peak heap of resolution 6 is less than half, and the time is about two times longer.
 
+## Areas
+
+The cut to a list of areas has the same steps as the cut to tiles. The test of a node is different: the grid of the
+area boxes, then the polygon test.
+
+| File | Areas | Files | Time | Peak RSS | Peak heap |
+|---|---|---|---|---|---|
+| Monaco | 4, they overlap (`tests/data/monaco-areas.json`) | 4 | 0.1 s | 41 MiB | 22 MiB |
+| Sweden | 10 boxes, 2 x 5, each 0.3 degrees larger on each side, so they overlap | 10 | 17.3 s | 1,015 MiB | 565 MiB |
+| Sweden | tiles of zoom 6, for comparison | 21 | 12.3 s | 953 MiB | 357 MiB |
+
+The 10 boxes of Sweden make 17 sets of areas. A node in an overlap goes to two or four files, so the output is larger
+than the output of zoom 6. Measured on the Mac mini (Apple M6, 12 cores, 16 GB), 2026-11-15.
+
 ## A smaller memory budget
 
 | File | Zoom | `--memory` | Time | Peak RSS | Peak heap |
