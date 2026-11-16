@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 pbfcut is an independent project. Do not mention the other projects of the owner in the code, the tests, the README or the manual.
 
-`docs/design.md` is the source of truth for scope and decisions. Status: only the `tiles` and `compare` commands exist. H3 cells and GeoJSON area lists (osmium-style extracts) are planned and not in the code. `docs/design.md` is for developers: `mkdocs.yml` keeps it out of the published manual.
+`docs/design.md` is the source of truth for scope and decisions. Status: the commands `tiles`, `areas` (a list of areas that can overlap, as `osmium extract -c`) and `compare` exist. H3 cells are planned and not in the code. `docs/design.md` is for developers: `mkdocs.yml` keeps it out of the published manual.
 
 ## Commands
 
@@ -23,6 +23,7 @@ Run the command:
 
 ```bash
 cargo run --release -- tiles tests/data/monaco.osm.pbf --zoom 14 --boundary tests/data/monaco.geojson -o out/
+cargo run --release -- areas tests/data/monaco.osm.pbf --areas tests/data/monaco-areas.json -o out/
 cargo run --release -- compare DIR_A DIR_B           # exit 1 if the elements of the .osm.pbf files differ
 ```
 
@@ -40,10 +41,11 @@ The library (`src/lib.rs`) has one module for each job. The command in `src/main
 
 - `decode`: reads the data blocks of a `.osm.pbf` file in place, with no owned objects. It gives the elements to a `RawSink` (`elements`). `read_block` and `decode_block` are the entry points.
 - `write`: `PbfWriter` writes the output. Blocks have 8000 elements, with no metadata, and the header says `Sort.Type_then_ID`.
-- `boundary`: GeoJSON Polygon or MultiPolygon, with point-in-area tests by latitude band. `WORLD` is a boundary that holds every point.
+- `boundary`: GeoJSON, `.poly`, WKT or a box (`Boundary::parse` finds the format from the text), with point-in-area tests by latitude band. `WORLD` is a boundary that holds every point.
+- `areas`: the list of areas of `pbfcut areas` (GeoJSON FeatureCollection or osmium config), with a grid of their boxes.
 - `tiles`: the Web Mercator tile grid and `tiles(boundary, z)`. Change the tile rule in this one function.
 - `extract`: the cut of one area (`cut_to_pbf`, `cut_where`) in four passes. The input must be sorted by type, then id (as the files of Geofabrik).
-- `tilecut` (and `tilecut/write.rs`): the cut to many tiles. It is the largest module. It reads the file two times. Read 1 only makes a plan. Read 2 writes each element straight into the files of its tiles. The cut keeps the tile of each node in memory as compressed runs of ids (`Book`). `cut_to_tiles` writes files to a folder. `cut_to_store` and `cut_to_sink` keep the tile files in a temporary store.
+- `tilecut` (and `tilecut/write.rs`): the cut to many tiles. It is the largest module. It reads the file two times. Read 1 only makes a plan. Read 2 writes each element straight into the files of its tiles. The cut keeps the tile of each node in memory as compressed runs of ids (`Book`). `cut_to_tiles` writes files to a folder, `cut_to_areas` does the same for an area list (`Index` gives the tiles, or the areas and sets of areas, of a point). `cut_to_store` and `cut_to_sink` keep the tile files in a temporary store.
 - `store`: rows in temporary files, with an external sort that has a memory budget. The large lists of the cut live here, so they do not stay in memory.
 
 ## Rules that are easy to break

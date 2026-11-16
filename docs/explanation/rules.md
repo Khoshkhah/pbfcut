@@ -14,6 +14,16 @@ Each tile file of pbfcut is a complete `.osm.pbf` file. These rules give the ele
 These are the rules of osmium's `smart` strategy (`osmium extract -s smart -S types=multipolygon,boundary`), with one
 difference. osmium gives a node exactly on a tile border to the two tiles, because its bounding box includes its edge.
 
+## Areas
+
+The cut to a list of areas (`pbfcut areas`) uses the same rules, with "area" in place of "tile". Areas can overlap,
+so a node can go to more than one area. A node exactly on the border of an area is inside it. Then the area files
+have the same elements as the files of `osmium extract -c` with the smart strategy.
+
+The cut keeps one number for each node. For a node in one area, the number is the area. For a node in more than one
+area, the number is a set of areas: the cut keeps a table of the sets that it finds. Thus the memory of the cut does
+not grow with the overlap. With `--steps`, the line of step 1 gives the number of sets.
+
 ## How the cut works
 
 The cut reads the file two times.

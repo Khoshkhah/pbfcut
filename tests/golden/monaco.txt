@@ -24,3 +24,8 @@ store-mixed-z14-z15 15_17060_11948.osm.pbf d70df47c9613b1c0 169356
 store-mixed-z14-z15 15_17059_11947.osm.pbf f21c972eceb5afd4 305420
 store-mixed-z14-z15 14_8530_5973.osm.pbf 9acca4bb95ad333c 465244
 area monaco.osm.pbf 40b041ac5e2fc2f3 552499
+# areas: the area list tests/data/monaco-areas.json (pbfcut kaveh/area-list); the elements equal osmium extract 1.14 -s smart -S types=multipolygon,boundary
+areas monaco.osm.pbf 40b041ac5e2fc2f3 552499
+areas west.osm.pbf 43dcf42713a8054e 400312
+areas east.osm.pbf bd992e6632b98d8c 407160
+areas harbour.osm.pbf e9c1188111efc983 211472

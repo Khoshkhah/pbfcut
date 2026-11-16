@@ -1,7 +1,7 @@
 # pbfcut
 
-pbfcut cuts an OpenStreetMap `.osm.pbf` file into map tiles. It reads the file one time for all tiles, and each tile
-file is a complete `.osm.pbf` file:
+pbfcut cuts an OpenStreetMap `.osm.pbf` file into map tiles or into a list of your own areas (as `osmium extract -c`;
+the areas can overlap). It reads the file one time for all outputs, and each output file is a complete `.osm.pbf` file:
 
 - the nodes in the tile;
 - each way with a node in the tile, with all its nodes;
@@ -17,8 +17,9 @@ Sweden (975 MB) on a Mac mini (12 cores, 16 GB):
 
 The same code builds for WebAssembly (`wasm32-unknown-unknown`), so a browser page can cut a file.
 
-Planned: H3 cells of one resolution (`pbfcut h3 IN.osm.pbf --res 7`) or of mixed resolutions, GeoJSON areas that can
-overlap (as the extracts of `osmium extract -c`).
+A boundary or an area can be GeoJSON, an osmosis polygon file (`.poly`, as on Geofabrik), WKT or a box.
+
+Planned: H3 cells of one resolution (`pbfcut h3 IN.osm.pbf --res 7`) or of mixed resolutions.
 
 ## Install and use
 

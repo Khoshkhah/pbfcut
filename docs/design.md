@@ -4,7 +4,8 @@ This document is for developers. It gives the scope of pbfcut, its rules and the
 include it.
 
 Status (2026-11-15): M1 and M1b are done: the crate, the commands `tiles` and `compare`, the golden tests, CI, the
-manual, and the memory budget. The next step is M2, H3 cells and GeoJSON areas.
+manual, and the memory budget. From M2, the command `areas` (GeoJSON and osmium config lists, sets of areas for
+overlap) and the boundary formats (GeoJSON, `.poly`, WKT, `--bbox`) are done. H3 cells are the next step.
 
 ## 1. Purpose
 
@@ -130,18 +131,23 @@ costs one more read of the refs, so it waits until a measurement asks for it.
 ```text
 pbfcut tiles   IN.osm.pbf (--zoom Z | --tiles LIST.txt) [OPTIONS] -o DIR
 pbfcut h3      IN.osm.pbf (--res R | --cells LIST.txt)  [OPTIONS] -o DIR     (M2)
-pbfcut areas   IN.osm.pbf --geojson AREAS.geojson [--owned] [OPTIONS] -o DIR  (M2)
+pbfcut areas   IN.osm.pbf --areas AREAS.geojson|CONFIG.json [--name PROPERTY] [OPTIONS] [-o DIR]
 pbfcut compare DIR_A DIR_B
 
-OPTIONS: [--boundary AREA.geojson] [--complete TYPES] [--steps] [--memory SIZE] [--temp DIR]
+OPTIONS: [--boundary FILE | --bbox W,S,E,N] [--complete TYPES] [--steps] [--memory SIZE] [--temp DIR]
+FILE: GeoJSON, an osmosis .poly file or WKT, found from the text
 ```
 
 - `h3 --res R`: all H3 cells of resolution `R` (0 to 15) that touch the boundary (no boundary: the bounding box of the
   file). `--cells LIST.txt`: a list of cell ids, one on each line, also of different resolutions. Each file is
   `DIR/<cell id>.osm.pbf`, for example `862b02d27ffffff.osm.pbf`.
-- `areas`: each feature of the GeoJSON (Polygon, MultiPolygon, or a `bbox` member) is one area and one output, as
-  the extracts of `osmium extract -c`. The file name comes from the property `name` of the feature, else from its
-  number.
+- `areas` (done): each feature of a GeoJSON FeatureCollection (Polygon, MultiPolygon, or a `bbox` member) is one
+  area and one output, as the extracts of `osmium extract -c`. The file name comes from the property `--name`
+  (default `name`), else from the `id` of the feature, else from its number. An osmium config file (`extracts`) also
+  works: the name from `output`, the area from `bbox`, `polygon` or `multipolygon` (coordinates or a `file_name`).
+  `src/areas.rs` reads the list and has the grid of the boxes; `tilecut::Index` gives the sets of areas to the book.
+  The tile cut keeps the home ways of nodes outside the boundary; the area cut does not, so an area file equals
+  osmium. `--owned` is not done: no use needs it yet.
 - `--memory SIZE`: the memory budget. `--temp DIR`: the folder of the temporary files.
 - Every command writes the numbers of elements of each output to standard output as JSON.
 

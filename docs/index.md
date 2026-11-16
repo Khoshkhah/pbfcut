@@ -1,7 +1,7 @@
 # pbfcut
 
-pbfcut cuts an OpenStreetMap `.osm.pbf` file into map tiles, with one read of the file for all tiles. Each tile file
-is a complete `.osm.pbf` file (see [The rules of the cut](explanation/rules.md)).
+pbfcut cuts an OpenStreetMap `.osm.pbf` file into map tiles or into a list of your own areas, with one read of the file
+for all outputs. Each output file is a complete `.osm.pbf` file (see [The rules of the cut](explanation/rules.md)).
 
 | Sweden (975 MB), Mac mini | pbfcut | osmium-tool 1.19.1 `extract -c -s smart` |
 |---|---|---|
@@ -17,7 +17,9 @@ node in one compressed list for all tiles, and writes the large lists to tempora
 ## Start here
 
 - [Cut a file into tiles](tutorials/cut-to-tiles.md): a tutorial on Monaco.
+- [Cut a file into your own areas](tutorials/cut-to-areas.md): a list of areas that overlap, as `osmium extract -c`.
 - [The command line](reference/cli.md): all commands and options.
+- [Boundary formats](reference/boundaries.md): GeoJSON, polygon files (`.poly`), WKT and boxes.
 - [The rules of the cut](explanation/rules.md): what each tile file holds.
 - [Speed and memory](explanation/speed-and-memory.md): the time and the memory by zoom, and the memory budget.
 
@@ -25,5 +27,4 @@ node in one compressed list for all tiles, and writes the large lists to tempora
 
 - H3 cells: all cells of one resolution (`pbfcut h3 IN.osm.pbf --res 7`), or a list of cells of different
   resolutions.
-- GeoJSON areas: each feature is one output, as the extracts of `osmium extract -c`. The areas can overlap.
 - An online page that cuts a file in the browser.

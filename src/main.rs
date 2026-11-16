@@ -1,12 +1,14 @@
 //! The command line of pbfcut (docs/reference/cli.md).
 //!
-//!   pbfcut tiles IN.osm.pbf (--zoom Z | --tiles LIST.txt) [--boundary AREA.geojson] [--complete TYPES] [--memory SIZE] [--temp DIR] [--steps] -o DIR
+//!   pbfcut tiles IN.osm.pbf (--zoom Z | --tiles LIST.txt) [OPTIONS] -o DIR
+//!   pbfcut areas IN.osm.pbf --areas AREAS.geojson|CONFIG.json [--name PROPERTY] [OPTIONS] [-o DIR]
 //!   pbfcut compare DIR_A DIR_B
 
 use pbfcut::boundary::{Boundary, WORLD};
 use pbfcut::decode::{decode_block, read_block, Buffers};
 use pbfcut::elements::{MemberType, RawSink};
-use pbfcut::tilecut::cut_to_tiles;
+use pbfcut::areas::AreaList;
+use pbfcut::tilecut::{cut_to_areas, cut_to_tiles};
 use pbfcut::tiles::{tiles, Tile};
 use std::collections::BTreeSet;
 use std::fs::File;
@@ -14,13 +16,17 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 const USAGE: &str = "usage:
-  pbfcut tiles IN.osm.pbf (--zoom Z | --tiles LIST.txt) [--boundary AREA.geojson] [--complete TYPES] [--memory SIZE] [--temp DIR] [--steps] -o DIR
-  pbfcut compare DIR_A DIR_B";
+  pbfcut tiles IN.osm.pbf (--zoom Z | --tiles LIST.txt) [OPTIONS] -o DIR
+  pbfcut areas IN.osm.pbf --areas AREAS.geojson|CONFIG.json [--name PROPERTY] [OPTIONS] [-o DIR]
+  pbfcut compare DIR_A DIR_B
+OPTIONS: [--boundary FILE | --bbox W,S,E,N] [--complete TYPES] [--memory SIZE] [--temp DIR] [--steps]
+  FILE: GeoJSON, an osmosis .poly file or WKT";
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let r = match args.first().map(String::as_str) {
         Some("tiles") => cut_tiles(&args[1..]),
+        Some("areas") => cut_areas(&args[1..]),
         Some("compare") if args.len() == 3 => compare(Path::new(&args[1]), Path::new(&args[2])),
         _ => Err(USAGE.to_string()),
     };
@@ -83,33 +89,18 @@ fn tile_list(text: &str) -> Result<Vec<Tile>, String> {
     Ok(list)
 }
 
-fn cut_tiles(args: &[String]) -> Result<(), String> {
-    let input = args.first().filter(|a| !a.starts_with("--")).ok_or(USAGE)?;
-    let out = PathBuf::from(opt(args, "-o").ok_or(USAGE)?);
-    let boundary = Boundary::parse(&match opt(args, "--boundary") {
-        Some(p) => read(p)?,
-        None => WORLD.to_string(),
-    })?;
-    let list = match (opt(args, "--zoom"), opt(args, "--tiles")) {
-        (Some(z), None) => {
-            let z = z.parse().ok().filter(|z| *z <= 30).ok_or("--zoom: a number from 0 to 30")?;
-            // no boundary: the tiles of the bounding box in the header of the file
-            let header_box;
-            let area = match opt(args, "--boundary") {
-                Some(_) => &boundary,
-                None => {
-                    let h = pbfcut::extract::full_header(File::open(input).map_err(|e| format!("{input}: {e}"))?)?;
-                    let (w, s, e, n) = h.bbox.ok_or("the file has no bounding box in its header: give --boundary")?;
-                    let ring = format!("[[{w},{s}],[{e},{s}],[{e},{n}],[{w},{n}],[{w},{s}]]");
-                    header_box = Boundary::parse(&format!(r#"{{"type":"Polygon","coordinates":[{ring}]}}"#))?;
-                    &header_box
-                }
-            };
-            tiles(area, z)
-        }
-        (None, Some(p)) => tile_list(&read(p)?)?,
-        _ => return Err(format!("give --zoom or --tiles\n{USAGE}")),
-    };
+/// The boundary of `--boundary FILE` or `--bbox W,S,E,N`, if the arguments have one.
+fn boundary(args: &[String]) -> Result<Option<Boundary>, String> {
+    match (opt(args, "--boundary"), opt(args, "--bbox")) {
+        (Some(p), None) => Boundary::parse(&read(p)?).map_err(|e| format!("{p}: {e}")).map(Some),
+        (None, Some(b)) => Boundary::from_box(b).map(Some),
+        (None, None) => Ok(None),
+        _ => Err("give --boundary or --bbox, not the two".into()),
+    }
+}
+
+/// The options of every cut: `--complete`, `--memory`, `--temp`, `--steps`. Gives the types to complete and `--steps`.
+fn options(args: &[String]) -> Result<(Vec<&str>, bool), String> {
     let complete: Vec<&str> = opt(args, "--complete").unwrap_or("multipolygon,boundary").split(',').filter(|t| !t.is_empty()).collect();
     if let Some(m) = opt(args, "--memory") {
         pbfcut::store::set_memory(size(m)?);
@@ -123,6 +114,74 @@ fn cut_tiles(args: &[String]) -> Result<(), String> {
         heap::ON.store(true, std::sync::atomic::Ordering::Relaxed);
         let _ = pbfcut::util::STEP_HOOK.set(step);
     }
+    Ok((complete, steps))
+}
+
+/// The JSON report of a cut to standard output: the number of tiles or areas (`kind`), the files and the time.
+fn report(kind: &str, n: usize, files: Vec<serde_json::Value>, start: Instant, steps: bool) {
+    let mut report = serde_json::json!({ kind: n, "files": files, "seconds": start.elapsed().as_secs_f64() });
+    if steps {
+        report["peak_heap_mib"] = serde_json::json!(heap::max() as f64 / 1048576.0);
+    }
+    println!("{}", serde_json::to_string_pretty(&report).expect("JSON"));
+}
+
+fn cut_areas(args: &[String]) -> Result<(), String> {
+    let input = args.first().filter(|a| !a.starts_with("--")).ok_or(USAGE)?;
+    let list_path = opt(args, "--areas").ok_or(format!("give --areas\n{USAGE}"))?;
+    let base = Path::new(list_path).parent().unwrap_or(Path::new(""));
+    // a file that the config names is relative to the config
+    let list = AreaList::parse(&read(list_path)?, opt(args, "--name").unwrap_or("name"), &|f| read(&base.join(f).to_string_lossy()))
+        .map_err(|e| format!("{list_path}: {e}"))?;
+    let out = PathBuf::from(opt(args, "-o").or(list.directory.as_deref()).ok_or(USAGE)?);
+    let boundary = boundary(args)?.map_or_else(|| Boundary::parse(WORLD), Ok)?;
+    let (complete, steps) = options(args)?;
+    std::fs::create_dir_all(&out).map_err(|e| format!("{}: {e}", out.display()))?;
+    let open = || File::open(input).map(|f| std::io::BufReader::with_capacity(1 << 20, f)).map_err(|e| format!("{input}: {e}"));
+    let start = Instant::now();
+    let counts = cut_to_areas(open, &boundary, &list, &out, &complete)?;
+    let files = list
+        .areas
+        .iter()
+        .zip(&counts)
+        .filter(|(_, c)| c.nodes > 0)
+        .map(|(a, c)| {
+            serde_json::json!({
+                "area": a.name, "file": format!("{}.osm.pbf", a.name),
+                "nodes": c.nodes, "ways": c.ways, "relations": c.relations,
+            })
+        })
+        .collect();
+    report("areas", list.areas.len(), files, start, steps);
+    Ok(())
+}
+
+fn cut_tiles(args: &[String]) -> Result<(), String> {
+    let input = args.first().filter(|a| !a.starts_with("--")).ok_or(USAGE)?;
+    let out = PathBuf::from(opt(args, "-o").ok_or(USAGE)?);
+    let given = boundary(args)?;
+    let has_boundary = given.is_some();
+    let boundary = given.map_or_else(|| Boundary::parse(WORLD), Ok)?;
+    let list = match (opt(args, "--zoom"), opt(args, "--tiles")) {
+        (Some(z), None) => {
+            let z = z.parse().ok().filter(|z| *z <= 30).ok_or("--zoom: a number from 0 to 30")?;
+            // no boundary: the tiles of the bounding box in the header of the file
+            let header_box;
+            let area = match has_boundary {
+                true => &boundary,
+                false => {
+                    let h = pbfcut::extract::full_header(File::open(input).map_err(|e| format!("{input}: {e}"))?)?;
+                    let (w, s, e, n) = h.bbox.ok_or("the file has no bounding box in its header: give --boundary")?;
+                    header_box = Boundary::from_box(&format!("{w},{s},{e},{n}"))?;
+                    &header_box
+                }
+            };
+            tiles(area, z)
+        }
+        (None, Some(p)) => tile_list(&read(p)?)?,
+        _ => return Err(format!("give --zoom or --tiles\n{USAGE}")),
+    };
+    let (complete, steps) = options(args)?;
     std::fs::create_dir_all(&out).map_err(|e| format!("{}: {e}", out.display()))?;
     let open = || File::open(input).map(|f| std::io::BufReader::with_capacity(1 << 20, f)).map_err(|e| format!("{input}: {e}"));
     let start = Instant::now();
@@ -139,11 +198,7 @@ fn cut_tiles(args: &[String]) -> Result<(), String> {
             })
         })
         .collect();
-    let mut report = serde_json::json!({ "tiles": list.len(), "files": files, "seconds": start.elapsed().as_secs_f64() });
-    if steps {
-        report["peak_heap_mib"] = serde_json::json!(heap::max() as f64 / 1048576.0);
-    }
-    println!("{}", serde_json::to_string_pretty(&report).expect("JSON"));
+    report("tiles", list.len(), files, start, steps);
     Ok(())
 }
 
