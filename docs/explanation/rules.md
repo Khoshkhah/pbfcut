@@ -37,16 +37,16 @@ Thus the memory does not grow with the number of tiles.
 
 <!-- The diagrams are images: docs/assets/diagrams/*.mmd, drawn by tools/diagrams.py. -->
 
-![The two reads of the cut: read 1 makes the plan in four steps, read 2 writes each element one time](../assets/diagrams/two-reads.png#only-light){ width="348" }
-![The two reads of the cut: read 1 makes the plan in four steps, read 2 writes each element one time](../assets/diagrams/two-reads-dark.png#only-dark){ width="348" }
+![The two reads of the cut: read 1 makes the plan in four steps, read 2 writes each element one time](../assets/diagrams/two-reads.png#only-light){ width="497" }
+![The two reads of the cut: read 1 makes the plan in four steps, read 2 writes each element one time](../assets/diagrams/two-reads-dark.png#only-dark){ width="497" }
 
 Read 1 decodes each block of the input one time. Step 3 finds the members of the relations in the id files, so it
 does not read the input again.
 
 ### The threads of read 2
 
-![The threads of read 2: read, decode and route, collect, pack, write](../assets/diagrams/threads.png#only-light){ width="323" }
-![The threads of read 2: read, decode and route, collect, pack, write](../assets/diagrams/threads-dark.png#only-dark){ width="323" }
+![The threads of read 2: read, decode and route, collect, pack, write](../assets/diagrams/threads.png#only-light){ width="461" }
+![The threads of read 2: read, decode and route, collect, pack, write](../assets/diagrams/threads-dark.png#only-dark){ width="461" }
 
 Blue: the calling thread. Yellow: the thread pool. The calling thread reads the next batch while the pool decodes the
 batch before. Only the calling thread opens the

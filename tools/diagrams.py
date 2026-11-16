@@ -30,7 +30,7 @@ window.DONE = true;
 
 # the colours of the .mmd files and of the dark copy: background, lines, text, the fills of the boxes
 LIGHT = ("#fff", "#ffffff", "#444", "#222", "#eef2ff", "#fff7e0", "#8a6d1f")
-DARK = ("#1e2129", "#1e2129", "#aaa", "#e6e6e6", "#28304a", "#3a3220", "#c9a227")
+DARK = ("#111318", "#111318", "#aaa", "#e6e6e6", "#28304a", "#3a3220", "#c9a227")
 
 with sync_playwright() as p:
     browser = p.chromium.launch()

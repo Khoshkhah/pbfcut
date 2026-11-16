@@ -20,16 +20,16 @@ processes of the browser, sampled every second. osmium is `osmium extract -c -s 
 | | | osmium | 53.6 s | 7.95 GiB | 55.4 GiB |
 | Sweden | 8 | pbfcut | 12.7 s | 1.07 GiB | 0.87 GiB |
 | | | online page | 22.2 s | 1.39 GiB | 1.00 GiB |
-| | | osmium | failed after 370 s ¹ | 9.27 GiB | 203 GiB |
+| | | osmium | failed after 370 s (1) | 9.27 GiB | 203 GiB |
 | France | 6 | pbfcut | 61.8 s | 1.05 GiB | 0.82 GiB |
 | | | online page | 96.1 s | 1.42 GiB | 1.05 GiB |
 | | | osmium | 176.4 s | 7.02 GiB | 35.9 GiB |
 | France | 8 | pbfcut | 59.8 s | 1.52 GiB | 1.21 GiB |
 | | | online page | 99.7 s | 1.65 GiB | 1.24 GiB |
-| | | osmium | stopped after 600 s ² | 7.07 GiB | 120 GiB |
+| | | osmium | stopped after 600 s (2) | 7.07 GiB | 120 GiB |
 
-¹ osmium ended with an error, and its files were not complete.
-² We stopped osmium after 600 s. Its memory numbers are sampled every second.
+1. osmium ended with an error, and its files were not complete.
+2. We stopped osmium after 600 s. Its memory numbers are sampled every second.
 
 Measured on 2026-11-16, one run at a time. Sweden has 21 tiles with data at zoom 6 and 183 at zoom 8; France has 12
 and 116.
