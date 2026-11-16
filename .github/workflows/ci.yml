@@ -24,6 +24,36 @@ jobs:
           cargo run --release -- tiles tests/data/monaco.osm.pbf --zoom 14 --boundary tests/data/monaco.geojson -o out2 > out2.json
           cargo run --release -- compare out1 out2
 
+  page:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # nightly first: the last toolchain is the default, and stable must be the default
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly-2026-10-15
+          targets: wasm32-unknown-unknown
+          components: rust-src
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-bindgen@0.2.129
+      - uses: Swatinem/rust-cache@v2
+      - name: The WebAssembly modules and the command line
+        run: |
+          ./web/build.sh
+          cargo build --release
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: The end-to-end test of the online page (desktop and phone, on Monaco)
+        run: |
+          pip install playwright
+          playwright install --with-deps chromium
+          python web/e2e.py
+
   manual:
     runs-on: ubuntu-latest
     steps:

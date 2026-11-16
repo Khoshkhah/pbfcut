@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pbfcut online</title>
+<meta name="description" content="Cut an OpenStreetMap .osm.pbf file into map tiles in your browser.">
+<!-- GitHub Pages cannot send the COOP and COEP headers that threads need: this service worker adds them -->
+<script src="coi-serviceworker.js?v=dev"></script>
+<style>
+  :root { --bg: #f7f7f5; --card: #fff; --text: #1d1d1f; --muted: #66666e; --line: #deded8; --accent: #2f6fb3;
+          --ok: #2e7d4f; --bad: #b3261e; color-scheme: light; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #16171a; --card: #1f2125; --text: #e8e8ea; --muted: #a0a0aa; --line: #34363c; --accent: #7ab0ea;
+            --ok: #6cc895; --bad: #f2948c; color-scheme: dark; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, sans-serif; }
+  main { max-width: 860px; margin: 0 auto; padding: 16px; }
+  header h1 { font-size: 1.5rem; margin: 8px 0 0; }
+  header p { margin: 4px 0 12px; color: var(--muted); }
+  a { color: var(--accent); }
+  section { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin: 12px 0; }
+  h2 { font-size: 1.05rem; margin: 0 0 10px; }
+  label { display: block; margin: 8px 0 2px; font-weight: 600; font-size: .9rem; }
+  .hint { color: var(--muted); font-size: .85rem; margin: 2px 0; }
+  input[type=text], input[type=number], input[list] { width: 100%; max-width: 420px; padding: 7px 9px; font: inherit;
+    border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--text); }
+  input[type=file] { max-width: 100%; font: inherit; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 0 16px; }
+  .tabs { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+  .tabs label { font-weight: 500; display: flex; gap: 6px; align-items: center; margin: 0; }
+  button { font: inherit; padding: 8px 16px; border-radius: 6px; border: 1px solid var(--accent); background: var(--accent);
+    color: var(--card); cursor: pointer; }
+  button.secondary { background: transparent; color: var(--accent); }
+  button:disabled { opacity: .45; cursor: default; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+  progress { width: 100%; max-width: 420px; }
+  .live { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 6px 16px; margin-bottom: 10px; }
+  .live div span { display: block; color: var(--muted); font-size: .8rem; }
+  .live div b { font-variant-numeric: tabular-nums; }
+  ol.steps { list-style: none; padding: 0; margin: 0; }
+  ol.steps li { display: grid; grid-template-columns: 2.4em 1fr auto; gap: 8px; padding: 4px 0; border-top: 1px solid var(--line);
+    color: var(--muted); font-variant-numeric: tabular-nums; }
+  ol.steps li.run { color: var(--text); font-weight: 600; }
+  ol.steps li.done { color: var(--text); }
+  ol.steps li.done b::before { content: "✓ "; color: var(--ok); }
+  .err { color: var(--bad); white-space: pre-wrap; }
+  .table { overflow-x: auto; max-height: 420px; overflow-y: auto; }
+  table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; font-size: .9rem; }
+  th, td { text-align: right; padding: 4px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main>
+<header>
+  <h1>pbfcut online</h1>
+  <p>Cut an OpenStreetMap <code>.osm.pbf</code> file into map tiles. The cut runs in your browser: the file is not uploaded.
+     <a href="manual/">Manual</a> · <a href="https://github.com/Khoshkhah/pbfcut">Source</a></p>
+</header>
+
+<section>
+  <h2>1. The input file</h2>
+  <div class="tabs">
+    <label><input type="radio" name="src" value="region" checked> A region of Geofabrik</label>
+    <label><input type="radio" name="src" value="file"> A file on this computer</label>
+  </div>
+  <div id="src-region">
+    <label for="region">Region</label>
+    <input id="region" list="regions" placeholder="Type to search, for example Monaco" autocomplete="off">
+    <datalist id="regions"></datalist>
+    <p class="hint">The list of <a href="https://download.geofabrik.de/">download.geofabrik.de</a>.</p>
+    <div id="region-get" hidden>
+      <div class="row"><button id="get" type="button">Get the file</button> <span id="get-text" class="hint"></span></div>
+      <progress id="get-bar" max="1" value="0" hidden></progress>
+    </div>
+    <div id="region-link" hidden>
+      <p class="hint">Geofabrik does not let other web pages read its files (no CORS headers). Download the file with this
+        link, then select it in "A file on this computer":</p>
+      <p><a id="link" href="#"></a></p>
+    </div>
+  </div>
+  <div id="src-file" hidden>
+    <label for="file">File</label>
+    <input id="file" type="file" accept=".pbf">
+  </div>
+</section>
+
+<section>
+  <h2>2. The settings</h2>
+  <div class="grid">
+    <div><label for="zoom">Zoom</label><input id="zoom" type="number" min="0" max="16" value="8"></div>
+    <div><label for="border">Border (m)</label><input id="border" type="number" min="0" step="1" value="0"></div>
+    <div><label for="threads">Threads</label><input id="threads" type="number" min="1" max="64" value="4"></div>
+  </div>
+  <label for="boundary">Boundary (optional)</label>
+  <input id="boundary" type="file" accept=".geojson,.json">
+  <p class="hint">A GeoJSON Polygon or MultiPolygon. With no boundary, the tiles cover the bounding box of the file.</p>
+  <p id="threads-hint" class="hint"></p>
+  <div class="row">
+    <button id="start" type="button" disabled>Cut</button>
+    <button id="stop" type="button" class="secondary" disabled>Stop</button>
+  </div>
+</section>
+
+<section id="progress" hidden>
+  <h2>3. Progress</h2>
+  <div class="live">
+    <div><span>Time</span><b id="time">0.0 s</b></div>
+    <div><span>Step</span><b id="stage">-</b></div>
+    <div><span>WebAssembly memory</span><b id="memory">-</b></div>
+    <div><span>Storage of this site</span><b id="storage">-</b></div>
+  </div>
+  <ol class="steps" id="steps"></ol>
+  <p id="error" class="err" hidden></p>
+</section>
+
+<section id="result" hidden>
+  <h2>4. The tile files</h2>
+  <p id="summary"></p>
+  <div class="row">
+    <button id="save" type="button">Save all to a folder</button>
+    <span id="save-text" class="hint"></span>
+  </div>
+  <div class="table"><table><thead><tr><th>File</th><th>Nodes</th><th>Ways</th><th>Relations</th><th>Size</th></tr></thead>
+    <tbody id="files"></tbody></table></div>
+</section>
+</main>
+<script type="module" src="app.js?v=dev"></script>
+</body>
+</html>

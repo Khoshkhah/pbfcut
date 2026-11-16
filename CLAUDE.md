@@ -28,6 +28,16 @@ cargo run --release -- compare DIR_A DIR_B           # exit 1 if the elements of
 
 `tiles` takes `--zoom Z` or `--tiles LIST.txt` (one `z/x/y` on each line, no tile inside another tile of the list). `--complete` sets the relation types that the cut keeps whole (default `multipolygon,boundary`). `--steps` prints the time of each step to standard error.
 
+The online page is in `web/` (a crate `pbfcut-web` with wasm-bindgen, and the page in `web/www/`). The worker owns the
+browser objects (the input file, a pool of 160 OPFS sync access handles for the temporary files, one OPFS file for the
+tile files). The module calls them only from the thread of the cut.
+
+```bash
+CARGO_BUILD_JOBS=4 ./web/build.sh                     # web/www/pkg (stable), web/www/pkg-threads (nightly), regions.json
+python3 web/serve.py 8800                             # no COOP/COEP headers, as Pages; ?relay=relay gets Geofabrik files
+python3 web/e2e.py [--relay]                          # Playwright, desktop and phone, on Monaco (needs cargo build --release)
+```
+
 ## Golden tests
 
 `tests/golden.rs` compares the output with the hashes of the reference files (`tests/golden/monaco.txt`, from pbfcut 11276bc). The input is `tests/data/monaco.osm.pbf`. The hash covers the blocks after the header block, because the header names the program.

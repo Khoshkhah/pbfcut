@@ -1,0 +1,25 @@
+[package]
+name = "pbfcut-web"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+publish = false
+description = "The online page of pbfcut: the cut in WebAssembly, with the temporary files in OPFS"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+pbfcut = { path = ".." }
+# one version with the wasm-bindgen command of build.sh and of the workflows
+wasm-bindgen = "=0.2.129"
+# rayon on Web Workers: only in the build with the feature "threads" (nightly Rust, a cross-origin isolated page)
+wasm-bindgen-rayon = { version = "1.3", features = ["no-bundler"], optional = true }
+
+[features]
+threads = ["dep:wasm-bindgen-rayon"]
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 16
