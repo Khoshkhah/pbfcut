@@ -30,11 +30,17 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         url = urllib.parse.parse_qs(u.query).get("url", [""])[0]
         if not url.startswith(GEOFABRIK):
             return self.send_error(400, "only files of download.geofabrik.de")
-        req = urllib.request.Request(url, headers={"User-Agent": "pbfcut-local-relay"})
+        headers = {"User-Agent": "pbfcut-local-relay"}
+        if self.headers.get("Range"):
+            headers["Range"] = self.headers["Range"]
+        req = urllib.request.Request(url, headers=headers)
         with urllib.request.urlopen(req) as r:
-            self.send_response(200)
+            self.send_response(r.status)
             self.send_header("Content-Type", "application/octet-stream")
             self.send_header("Content-Length", r.headers["Content-Length"])
+            if r.headers.get("Content-Range"):
+                self.send_header("Content-Range", r.headers["Content-Range"])
+            self.send_header("Access-Control-Expose-Headers", "Content-Range, Content-Length")
             self.send_header("Access-Control-Allow-Origin", "*")
             self.end_headers()
             shutil.copyfileobj(r, self.wfile, 1 << 20)
