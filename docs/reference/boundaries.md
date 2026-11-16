@@ -1,28 +1,30 @@
 # Boundary formats
 
-`--boundary FILE` and the polygon files of an area list (`--areas`) can have these formats. pbfcut finds the format from
-the text of the file, not from its name.
+`--boundary FILE` and the polygon files of an area list can have these formats. pbfcut finds the format from the text
+of the file, not from its name. All coordinates are longitude, then latitude, in degrees (WGS 84).
 
-| Format | The text starts with | Example |
-|---|---|---|
-| GeoJSON | `{` | `{"type": "Polygon", "coordinates": [[[7.40, 43.72], [7.45, 43.72], [7.45, 43.76], [7.40, 43.72]]]}` |
-| WKT | `POLYGON` or `MULTIPOLYGON` | `POLYGON ((7.40 43.72, 7.45 43.72, 7.45 43.76, 7.40 43.72))` |
-| A box | a number | `7.40,43.72,7.45,43.76` (west, south, east, north) |
-| Polygon file (`.poly`) | a name line | see below |
+| Format | Example |
+|---|---|
+| GeoJSON | `{"type": "Polygon", "coordinates": [[[7.40, 43.72], [7.45, 43.72], [7.45, 43.76], [7.40, 43.72]]]}` |
+| WKT | `POLYGON ((7.40 43.72, 7.45 43.72, 7.45 43.76, 7.40 43.72))` |
+| Polygon file (`.poly`) | see below |
+| A box (`--bbox`) | `7.40,43.72,7.45,43.76` (west, south, east, north) |
 
-All coordinates are longitude, then latitude, in degrees (WGS 84).
+A node exactly on a border is inside, as in osmium.
 
 ## GeoJSON
 
-A Polygon or a MultiPolygon. It can be in a Feature or in a FeatureCollection: then the boundary is all polygons of all
-features. A Feature with no geometry and a `bbox` member (`[west, south, east, north]`) is a box.
+A Polygon or a MultiPolygon, also inside a Feature or a FeatureCollection. A Feature with no geometry and a `bbox`
+member is a box. For `--boundary`, all features together are one area. For `--areas`, each feature is one area.
 
-For `--boundary`, a FeatureCollection is one area. For `--areas`, each feature is one area.
+## WKT
+
+A `POLYGON` or a `MULTIPOLYGON`. The first ring of a polygon is its outside, and the other rings are holes.
 
 ## Polygon file
 
-The osmosis polygon format. Geofabrik has one for each of its areas, next to the `.osm.pbf` file (for example
-`https://download.geofabrik.de/europe/monaco.poly`).
+The osmosis format. Geofabrik has one for each region, for example
+<https://download.geofabrik.de/europe/monaco.poly>.
 
 ```text
 monaco
@@ -40,19 +42,5 @@ END
 END
 ```
 
-- The first line is the name of the area.
-- Each section is one ring: a name line, one point on each line (longitude and latitude), and `END`.
-- A section with a name that starts with `!` is a hole. It goes to the polygon that holds its first point.
-- The last line is `END`.
-
-## WKT
-
-A `POLYGON` or a `MULTIPOLYGON`. The first ring of a polygon is its outer ring, and the other rings are holes.
-
-## The box option
-
-`--bbox W,S,E,N` gives a box with no file. You cannot give `--bbox` and `--boundary` together.
-
-## Points on the border
-
-A node exactly on the border of a boundary or of an area is inside it, as in osmium.
+The first line is the name. Each section is one ring, with one point on each line, and ends with `END`. A section
+whose name starts with `!` is a hole. The last line is `END`.
