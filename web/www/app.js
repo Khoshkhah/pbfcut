@@ -54,6 +54,30 @@ $("theme").addEventListener("click", () => {
   try { localStorage.setItem("theme", document.documentElement.dataset.theme); } catch {}
 });
 
+// ---- the help popups (the buttons "?")
+const HELP = {
+  input: ["Input", "Select a region of Geofabrik or a .osm.pbf file on this computer. The file stays on your computer: the page does not upload it.",
+    "Get puts the region file into the storage of this site, through a relay (Geofabrik does not let other web pages read its files). Download saves the file on your computer."],
+  kind: ["Kind of cut", "Tiles: one file for each map tile of a zoom.", "One area: one file with the data inside the boundary."],
+  zoom: ["Zoom", "The zoom of the map tiles. At zoom 8 a tile is approximately 150 km wide; each zoom more halves it."],
+  border: ["Border", "Each tile file also gets the data in this border around its tile, in metres. 0: no border."],
+  threads: ["Threads", "The number of threads of the cut. The default is the number of cores of this computer.",
+    "Threads need a page that is cross-origin isolated. If the browser does not allow it, the cut uses one thread."],
+  boundary: ["Boundary", "A GeoJSON file with a Polygon or a MultiPolygon. The cut keeps only the data inside it.",
+    "Tiles: optional. With no boundary, the tiles cover the bounding box of the file. One area: necessary."],
+  progress: ["Progress", "Memory: the WebAssembly memory of the cut. Storage: the files of this site (the input from Get, the temporary files and the result).",
+    "Each step gets its time when it ends. Move the pointer on a step to see its details."],
+  files: ["Files", "Save all to a folder writes all files into a folder that you select (Chrome and Edge on a computer). Click a file name to download one file.",
+    "When you refresh or close the page, the page removes all its files from the storage of this site. Save the files first."],
+};
+for (const b of document.querySelectorAll("button.help")) b.addEventListener("click", (e) => {
+  e.preventDefault();     // a "?" in a label does not select its field
+  const [title, ...text] = HELP[b.dataset.help];
+  $("help-title").textContent = title;
+  $("help-text").replaceChildren(...text.map((t) => Object.assign(document.createElement("p"), { textContent: t })));
+  $("help-box").showModal();
+});
+
 // ---- 1. the input
 const source = () => document.querySelector("input[name=src]:checked").value;
 for (const r of document.querySelectorAll("input[name=src]")) r.addEventListener("change", () => {

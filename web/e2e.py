@@ -125,6 +125,12 @@ def main():
             assert int(page.text_content("#files tr:first-child td:nth-child(2)")) > 30000
             print("desktop, one area:", page.text_content("#summary"))
 
+            # the help popups: each "?" opens its text
+            for b in page.locator("button.help").all():
+                if b.is_visible():
+                    b.click()
+                    assert page.locator("#help-box").is_visible() and page.text_content("#help-title")
+                    page.click("#help-box button")
             # the phone: the cut, one file downloaded, no horizontal scroll
             phone = open_page(browser, url, viewport={"width": 390, "height": 844}, is_mobile=True, has_touch=True,
                               device_scale_factor=3)

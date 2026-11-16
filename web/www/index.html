@@ -79,6 +79,15 @@
   th, td { text-align: right; padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
   th:first-child, td:first-child { text-align: left; padding-left: 0; }
   td a { text-decoration: none; }
+  button.help { width: 18px; height: 18px; padding: 0; margin-left: 4px; border-radius: 50%; border: 1px solid var(--line);
+    background: var(--field); color: var(--muted); font-size: .7rem; font-weight: 600; line-height: 16px; vertical-align: 1px; }
+  button.help:hover { color: var(--accent); border-color: var(--accent); }
+  dialog { max-width: min(440px, calc(100vw - 32px)); border: 1px solid var(--line); border-radius: 14px; padding: 20px;
+    background: var(--card); color: var(--text); box-shadow: 0 10px 40px rgb(0 0 0 / .25); }
+  dialog::backdrop { background: rgb(0 0 0 / .35); }
+  dialog h3 { margin: 0 0 8px; font-size: 1rem; }
+  dialog p { margin: 0 0 10px; font-size: .9rem; color: var(--muted); }
+  dialog form { text-align: right; margin-top: 6px; }
   [hidden] { display: none !important; }
   @media (max-width: 560px) {
     .grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -96,7 +105,7 @@
 </header>
 
 <section class="card">
-  <h2>Input</h2>
+  <h2>Input <button type="button" class="help" data-help="input" aria-label="Help">?</button></h2>
   <div class="switch">
     <input type="radio" name="src" value="region" id="src-r" checked><label for="src-r">Geofabrik region</label>
     <input type="radio" name="src" value="file" id="src-f"><label for="src-f">Local file</label>
@@ -119,18 +128,18 @@
 </section>
 
 <section class="card">
-  <h2>Settings</h2>
+  <h2>Settings <button type="button" class="help" data-help="kind" aria-label="Help">?</button></h2>
   <div class="switch">
     <input type="radio" name="kind" value="tiles" id="kind-t" checked><label for="kind-t">Tiles</label>
     <input type="radio" name="kind" value="area" id="kind-a"><label for="kind-a">One area</label>
   </div>
   <div class="grid">
-    <div data-kind="tiles"><label for="zoom">Zoom</label><input id="zoom" type="number" min="0" max="16" value="8"></div>
-    <div data-kind="tiles"><label for="border">Border (m)</label><input id="border" type="number" min="0" step="1" value="0"></div>
-    <div><label for="threads">Threads</label><input id="threads" type="number" min="1" max="64" value="4"></div>
+    <div data-kind="tiles"><label for="zoom">Zoom <button type="button" class="help" data-help="zoom" aria-label="Help">?</button></label><input id="zoom" type="number" min="0" max="16" value="8"></div>
+    <div data-kind="tiles"><label for="border">Border (m) <button type="button" class="help" data-help="border" aria-label="Help">?</button></label><input id="border" type="number" min="0" step="1" value="0"></div>
+    <div><label for="threads">Threads <button type="button" class="help" data-help="threads" aria-label="Help">?</button></label><input id="threads" type="number" min="1" max="64" value="4"></div>
   </div>
   <div class="row">
-    <label for="boundary" style="margin:0" title="A GeoJSON Polygon or MultiPolygon. With no boundary, the tiles cover the bounding box of the file.">Boundary</label>
+    <label for="boundary" style="margin:0">Boundary <button type="button" class="help" data-help="boundary" aria-label="Help">?</button></label>
     <input id="boundary" type="file" accept=".geojson,.json">
   </div>
   <p id="threads-hint" class="hint"></p>
@@ -141,7 +150,7 @@
 </section>
 
 <section class="card" id="progress" hidden>
-  <h2>Progress</h2>
+  <h2>Progress <button type="button" class="help" data-help="progress" aria-label="Help">?</button></h2>
   <div class="stats">
     <div><span>Time</span><b id="time">0.0 s</b></div>
     <div><span>Step</span><b id="stage">-</b></div>
@@ -154,7 +163,7 @@
 </section>
 
 <section class="card" id="result" hidden>
-  <h2>Files</h2>
+  <h2>Files <button type="button" class="help" data-help="files" aria-label="Help">?</button></h2>
   <p id="summary"></p>
   <div class="row">
     <button id="save" type="button">Save all to a folder</button>
@@ -164,6 +173,8 @@
     <tbody id="files"></tbody></table></div>
 </section>
 </main>
+<dialog id="help-box"><h3 id="help-title"></h3><div id="help-text"></div>
+  <form method="dialog"><button>Close</button></form></dialog>
 <script type="module" src="app.js?v=dev"></script>
 </body>
 </html>
