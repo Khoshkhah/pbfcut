@@ -111,6 +111,36 @@ def main():
 
             # the desktop: a local file, a boundary, threads; "Save all to a folder" into an OPFS folder
             page = open_page(browser, url, viewport={"width": 1280, "height": 900})
+            # the map from the start, before any file
+            page.wait_for_selector("#map canvas", timeout=60000)
+            assert page.text_content("#plan-text").startswith("Choose a file or a boundary"), page.text_content("#plan-text")
+            # a boundary only (no file yet): the plan, and the zooms above 20,000 tiles are off
+            europe = Path(tmp) / "europe.txt"
+            europe.write_text("-10,35,30,70")
+            page.set_input_files("#boundary", str(europe))
+            page.select_option("#zoom", "8")
+            page.wait_for_function("/^[0-9,]+ tiles that touch the boundary/.test(document.querySelector('#plan-text').textContent)", timeout=60000)
+            off = page.evaluate("[...document.querySelectorAll('#zoom option')].filter(o => o.disabled).map(o => Number(o.value))")
+            # the tiles of a box at zoom z: all tiles from its north-west corner to its south-east corner
+            import math
+            def tile(z, lon, lat):
+                n = 2 ** z
+                return int((lon + 180) / 360 * n), int((1 - math.asinh(math.tan(math.radians(lat))) / math.pi) / 2 * n)
+            def box_tiles(z):
+                (x0, y0), (x1, y1) = tile(z, -10, 70), tile(z, 30, 35)
+                return (x1 - x0 + 1) * (y1 - y0 + 1)
+            want_off = [z for z in range(2, 17) if box_tiles(z) > 20000]
+            assert off == want_off, f"the zooms that are off: {off}, want {want_off}"
+            print("desktop, a boundary only:", page.text_content("#plan-text"), "zooms off:", off)
+            # the theme: the layers of the plan stay, in the colours of the other theme
+            colour = lambda: page.evaluate("planMap.getPaintProperty('outlines-line', 'line-color')")
+            before = colour()
+            page.click("#theme")
+            page.wait_for_function("planMap.isStyleLoaded() && !!planMap.getLayer('outlines-line') && planMap.querySourceFeatures('outlines').length > 0", timeout=60000)
+            assert colour() != before, "the colour of the outlines did not change with the theme"
+            page.click("#theme")
+            page.wait_for_function("planMap.isStyleLoaded() && !!planMap.getLayer('outlines-line')", timeout=60000)
+            print("desktop, the theme: the layers stay")
             page.click("label[for=src-f]")
             page.set_input_files("#file", str(PBF))
             page.set_input_files("#boundary", str(AREA))

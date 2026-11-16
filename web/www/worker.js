@@ -57,13 +57,13 @@ async function plan(o) {
     planModule = await import("./pkg/pbfcut_web.js?v=dev");
     await planModule.default({ module_or_path: new URL("./pkg/pbfcut_web_bg.wasm?v=dev", import.meta.url) });
   }
-  let file = o.file;
+  let file = o.file ?? null;     // none: no input yet (the plan of a boundary or of the areas)
   if (o.region) {
     const regions = await (await navigator.storage.getDirectory()).getDirectoryHandle("regions");
     file = await (await regions.getFileHandle(o.region)).getFile();
   }
   input = { file };
-  return JSON.parse(planModule.plan(file.size, o.kind, o.level, o.boundary, o.areas, o.max));
+  return JSON.parse(planModule.plan(file?.size ?? 0, o.kind, o.level, o.boundary, o.areas, o.max, o.limit));
 }
 
 // o: {file: File} or {region: name of a file in the OPFS folder "regions"}, and zoom, boundary (GeoJSON text or null),
