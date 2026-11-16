@@ -84,21 +84,36 @@ flowchart TB
         R["<b>Read</b><br/>the next blocks<br/>and their extra rows"]
     end
 
-    subgraph P["② The threads of the pool"]
+    subgraph P1["② The threads of the pool"]
         D["<b>Decode</b><br/>a block"]
-        G["<b>Route</b><br/>each element to its tiles"]
-        K["<b>Pack</b><br/>the elements of each tile<br/>into PBF blocks"]
-        D --> G --> K
+        G["<b>Route</b><br/>each element to its tiles,<br/>as compact bytes"]
+        D --> G
     end
 
     subgraph T2["③ The calling thread"]
-        WR["<b>Write</b><br/>the bytes of each tile<br/>to its file, in input order"]
+        C["<b>Collect</b><br/>the elements of each tile<br/>until a block of 8,000 is full"]
+    end
+
+    subgraph P2["④ The threads of the pool"]
+        K["<b>Pack</b><br/>the full blocks,<br/>with the next batch"]
+    end
+
+    subgraph T3["⑤ The calling thread"]
+        WR["<b>Write</b><br/>the blocks of each tile<br/>to its file, in input order"]
     end
 
     R -- "a batch of blocks" --> D
-    K -- "the bytes of each tile" --> WR
+    G -- "the bytes of each tile" --> C
+    C -- "the full blocks" --> K
+    K --> WR
 ```
 
-The calling thread reads the next batch while the pool packs the batch before, and writes the batch before that.
-Only the calling thread opens the files: in the browser, a file of the storage belongs to the thread that opened it.
-An element for many tiles (a large boundary) is packed one time, and its block goes to each tile.
+The calling thread reads the next batch while the pool decodes the batch before. The pool packs the full blocks of
+the tiles together with the decoding of a later batch. Only the calling thread opens the files: in the browser, a file
+of the storage belongs to the thread that opened it.
+
+Each tile file has full blocks of 8,000 elements. One block of the input gives a tile only some elements (France at
+zoom 8: about 77 nodes), so the elements of each tile wait until they fill a block. They wait as compact bytes, one
+buffer for each tile and input block, and all of them hold an eighth of the memory budget at most. Above that, the
+tiles that hold the most write their blocks before they are full. A small budget thus gives other blocks, but the same
+elements.
