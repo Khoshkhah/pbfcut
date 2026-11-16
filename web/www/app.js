@@ -15,11 +15,12 @@ STEPS.h3 = STEPS.areas = STEPS.tiles;     // the same cut, with cells or areas i
 const kind = () => document.querySelector("input[name=kind]:checked").value;
 for (const r of document.querySelectorAll("input[name=kind]")) r.addEventListener("change", () => {
   for (const e of document.querySelectorAll("[data-kind]")) e.hidden = !e.dataset.kind.split(" ").includes(kind());
+  resetNote();
   ready();
 });
-$("boundary").addEventListener("change", ready);
-$("zoom").addEventListener("change", () => { lowered = ""; ready(); });
-$("res").addEventListener("change", () => { lowered = ""; ready(); });
+$("boundary").addEventListener("change", () => { resetNote(); ready(); });
+$("zoom").addEventListener("change", () => { resetNote(); ready(); });
+$("res").addEventListener("change", () => { resetNote(); ready(); });
 $("areas").addEventListener("change", ready);
 // The relay: a Cloudflare Worker of the owner that sends Geofabrik's files with CORS headers (Geofabrik sends none).
 // It accepts only files of download.geofabrik.de and only some origins. ?relay=<address> gives another relay
@@ -188,6 +189,7 @@ $("region").addEventListener("keydown", (e) => {
 $("region").addEventListener("blur", () => showMatches(false));
 // the region of the input: the buttons Get and Download, and whether its file is in the storage of this site
 async function setRegion(x) {
+  resetNote();
   region = x;
   regionReady = false;
   $("region-actions").hidden = !region;
@@ -370,7 +372,7 @@ $("link").addEventListener("click", async (e) => {
   $("get-bar").hidden = true;
   $("link").classList.remove("disabled");
 });
-$("file").addEventListener("change", ready);
+$("file").addEventListener("change", () => { resetNote(); ready(); });
 
 // ---- 2. the settings
 const isolated = self.crossOriginIsolated;
@@ -390,8 +392,10 @@ const MAX_FILES = 20000;      // the most tiles or cells of one cut on this page
 let planWorker = null, planId = 0, planTimer = null, map = null, lastPlan = null, tooMany = false;
 // the style of the map can take layers (MapLibre's isStyleLoaded() stays false while base-map tiles load)
 let styleReady = false, planWhere = "";
-// the note when the page lowered the zoom or the resolution to the highest one that it can cut
+// the note when the page lowered the zoom or the resolution to the highest one that it can cut: it stays until the person
+// changes the input, the boundary, the kind or the level
 let lowered = "";
+const resetNote = () => { lowered = ""; };
 const dark = () => document.documentElement.dataset.theme
   ? document.documentElement.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
 const style = () => `https://tiles.openfreemap.org/styles/${dark() ? "fiord" : "positron"}`;
@@ -484,7 +488,6 @@ function showPlan({ plan, error, hint }) {
       ? `${plan.count.toLocaleString("en")} ${word}s: this page cuts at most ${MAX_FILES.toLocaleString("en")}. Choose a lower ${kind() === "h3" ? "resolution" : "zoom"} or a smaller boundary.`
       : lowered + `${plan.count.toLocaleString("en")} ${word}${s}${where}.`
         + (kind() === "areas" ? "" : ` Only the ${word}s with data get a file.`);
-    lowered = "";       // the note shows with the plan that follows the change only
     // too many: only the boundary (a part of the outlines looks like a cut of a part of the area)
     lastPlan = tooMany ? { ...plan, outlines: EMPTY } : plan;
     // the map zoom at which one tile or cell is a few pixels wide: its outlines fade in from there (an H3 cell of
