@@ -15,7 +15,9 @@ Sweden (975 MB) on a Mac mini (12 cores, 16 GB):
 | zoom 6, 21 tiles | 11.2 s, 1.8 GB | 50.9 s, 9.8 GB |
 | zoom 8, 206 tiles | 15.2 s, 1.5 GB | stopped after 378 s, no data |
 
-The same code builds for WebAssembly (`wasm32-unknown-unknown`), so a browser page can cut a file.
+The same code builds for WebAssembly (`wasm32-unknown-unknown`). The online page cuts a file in your browser, with no
+installation: https://khoshkhah.github.io/pbfcut/ (source in `web/`). The command line is about 1.6 times faster than
+the online page (Sweden, zoom 8, 12 threads, Mac mini: 12.7 s against 19.8 s in Chromium).
 
 Planned: H3 cells of one resolution (`pbfcut h3 IN.osm.pbf --res 7`) or of mixed resolutions, GeoJSON areas that can
 overlap (as the extracts of `osmium extract -c`).

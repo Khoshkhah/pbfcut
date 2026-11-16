@@ -195,6 +195,10 @@ command line.
 3. **M2, H3 cells and GeoJSON areas.** The function "the areas of a point" for H3 and for GeoJSON, the sets of areas
    for overlap, the commands `h3` and `areas`, their golden tests, and a measurement against osmium on Sweden with the
    same areas.
-4. **M3, the online page** of section 6, on GitHub Pages.
+4. **M3, the online page** of section 6, on GitHub Pages. Done: map tiles (a zoom, a boundary, a border, the threads),
+   a region of Geofabrik or a local file, the progress and the steps, "Save all to a folder", the e2e test
+   (`web/e2e.py`). Geofabrik sends no CORS headers: the page gives a download link, and Get streams the
+   file into OPFS through a relay (the default is the owner's Cloudflare Worker; `web/serve.py` has one for tests). Not done: H3 cells, GeoJSON areas, the map before
+   the cut, the CPU use, the `.zip` download.
 
 A step is done only when its part of the manual is done.
