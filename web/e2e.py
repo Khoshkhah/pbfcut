@@ -38,6 +38,22 @@ def cli_files(out, *args):
     return {p.name: p.read_bytes() for p in Path(out).glob("*.osm.pbf")}
 
 
+def cli_count(*args):
+    """The number of tiles, cells or areas of a cut of the command line (its JSON), for the map of the plan."""
+    import json
+    with tempfile.TemporaryDirectory() as out:
+        r = subprocess.run([ROOT / "target/release/pbfcut", *args, "-o", out], check=True, capture_output=True, text=True)
+    j = json.loads(r.stdout)
+    return j.get("tiles", j.get("cells", j.get("areas")))
+
+
+def check_plan(page, count, word):
+    """The map before the cut: its text gives the count of the command line, and the map is drawn."""
+    page.wait_for_function(f"document.querySelector('#plan-text').textContent.startsWith('{count:,} {word}')", timeout=60000)
+    page.wait_for_selector("#map canvas", timeout=60000)
+    return page.text_content("#plan-text")
+
+
 def save_all(page):
     """ "Save all to a folder", with the folder picker of the page given an OPFS folder; gives {name: bytes}."""
     page.evaluate("""self.showDirectoryPicker = async () => {
@@ -98,6 +114,15 @@ def main():
             page.click("label[for=src-f]")
             page.set_input_files("#file", str(PBF))
             page.set_input_files("#boundary", str(AREA))
+            page.select_option("#zoom", "14")
+            print("desktop, the map:", check_plan(page, cli_count("tiles", PBF, "--zoom", "14", "--boundary", AREA), "tile"))
+            # a boundary that is not a boundary: the plan gives the error before the cut
+            bad = Path(tmp) / "bad.geojson"
+            bad.write_text('{"type": "Point", "coordinates": [7.4, 43.7]}')
+            page.set_input_files("#boundary", str(bad))
+            page.wait_for_function("document.querySelector('#plan-text').textContent.startsWith('This cut cannot start')", timeout=60000)
+            print("desktop, a bad boundary:", page.text_content("#plan-text"))
+            page.set_input_files("#boundary", str(AREA))
             print("desktop:", cut(page, threads=4))
             assert page.text_content("#threads-hint") == ""
             got = save_all(page)
@@ -141,6 +166,8 @@ def main():
             assert page.is_disabled("#start"), "the areas need their file"
             for areas_file, want_dir in [(AREA, "a1"), (two, "a2"), (plain, None)]:
                 page.set_input_files("#areas", str(areas_file))
+                n = 2 if areas_file == two else 1
+                check_plan(page, n, "area")
                 page.click("#start")
                 page.wait_for_selector("#result:not([hidden]), #error:not([hidden])", timeout=120000)
                 assert not page.locator("#error").is_visible(), page.text_content("#error")
@@ -163,6 +190,7 @@ def main():
             want_h3 = cli_files(Path(tmp) / "h3", "h3", PBF, "--res", "9")
             page.click("label[for=kind-h]")
             page.select_option("#res", "9")
+            print("desktop, H3, the map:", check_plan(page, cli_count("h3", PBF, "--res", "9", "--boundary", AREA), "cell"))
             page.click("#start")
             page.wait_for_selector("#result:not([hidden]), #error:not([hidden])", timeout=120000)
             assert not page.locator("#error").is_visible(), page.text_content("#error")
@@ -191,6 +219,10 @@ def main():
             phone.click("label[for=src-f]")
             phone.set_input_files("#file", str(PBF))
             phone.set_input_files("#boundary", str(AREA))     # this test file has no bounding box in its header
+            phone.select_option("#zoom", "14")
+            check_plan(phone, cli_count("tiles", PBF, "--zoom", "14", "--boundary", AREA), "tile")
+            if shots:
+                phone.screenshot(path=shots / "phone-map.png", full_page=True)
             print("phone, one thread:", cut(phone, threads=1))
             with phone.expect_download() as d:
                 phone.click("#files tr:first-child a")

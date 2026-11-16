@@ -21,8 +21,10 @@ Use Chrome or Edge on a computer. Only these browsers can save all files into a 
 
 4. Set the **Zoom** or the **Resolution**. The list shows the size of the tiles or cells.
 5. Optional: select a **Boundary** file (GeoJSON, `.poly` or WKT). The cut then keeps only the data inside it.
-6. Click **Cut**. The page shows each step and its time.
-7. Click **Save all to a folder**, and select a folder.
+6. Look at the map. It shows the tiles, cells or areas of the cut and the boundary, with their number. If the
+   boundary or the areas file has an error, the page shows it here.
+7. Click **Cut**. The page shows each step and its time.
+8. Click **Save all to a folder**, and select a folder.
 
 The files are equal to the files of the [command line](../reference/cli.md) with the same settings.
 

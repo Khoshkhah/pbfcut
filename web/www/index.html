@@ -95,6 +95,9 @@
   dialog dt:first-child { border-top: 0; padding-top: 0; }
   dialog dd { margin: 2px 0 10px; font-size: .86rem; color: var(--muted); }
   dialog form { text-align: right; margin-top: 6px; }
+  /* the map of the plan, before the cut */
+  #map { height: 300px; margin-top: 10px; border-radius: 10px; overflow: hidden; border: 1px solid var(--line); background: var(--field); }
+  #plan-text.bad { color: var(--bad); }
   [hidden] { display: none !important; }
   @media (max-width: 560px) {
     .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -157,6 +160,10 @@
     <input id="boundary" type="file" accept=".geojson,.json,.poly,.wkt,.txt">
   </div>
   <p id="threads-hint" class="hint"></p>
+  <div id="plan" hidden>
+    <p id="plan-text" class="hint"></p>
+    <div id="map" role="img" aria-label="The map of the tiles, cells or areas of the cut"></div>
+  </div>
   <div class="row">
     <button id="start" type="button" disabled>Cut</button>
     <button id="stop" type="button" class="secondary" disabled>Stop</button>

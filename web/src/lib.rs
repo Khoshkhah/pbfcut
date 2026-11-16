@@ -169,15 +169,7 @@ pub fn cut(
     areas: Option<String>,
 ) -> Result<String, JsValue> {
     let open = setup(size, memory_mib);
-    let area = match &boundary {
-        Some(b) => Boundary::parse(b)?,
-        None => {
-            let h = pbfcut::extract::full_header(open()?)?;
-            let (w, s, e, n) = h.bbox.ok_or("the file has no bounding box in its header: give a boundary")?;
-            let ring = format!("[[{w},{s}],[{e},{s}],[{e},{n}],[{w},{n}],[{w},{s}]]");
-            Boundary::parse(&format!(r#"{{"type":"Polygon","coordinates":[{ring}]}}"#))?
-        }
-    };
+    let area = area_of(&open, &boundary)?;
     let world = Boundary::parse(WORLD)?;
     let inside = if boundary.is_some() { &area } else { &world };
     let complete: Vec<&str> = complete.split(',').map(str::trim).filter(|t| !t.is_empty()).collect();
@@ -209,6 +201,61 @@ pub fn cut(
         })
         .collect();
     Ok(format!(r#"{{"tiles":{},"files":[{}],"seconds":{}}}"#, names.len(), files.join(","), (js_sys_now() - started) / 1000.0))
+}
+
+/// The area of the list of tiles or cells: the boundary, else the bounding box in the header of the input file.
+fn area_of(open: &impl Fn() -> Result<io::BufReader<Input>, String>, boundary: &Option<String>) -> Result<Boundary, String> {
+    match boundary {
+        Some(b) => Boundary::parse(b),
+        None => {
+            let h = pbfcut::extract::full_header(open()?)?;
+            let (w, s, e, n) = h.bbox.ok_or("the file has no bounding box in its header: give a boundary")?;
+            Boundary::from_box(&format!("{w},{s},{e},{n}"))
+        }
+    }
+}
+
+/// The plan of a cut, before the cut, for the map of the page: the tiles, cells or areas of [`cut`] with the same
+/// arguments (the same lists), and the boundary. Gives JSON: `count` (the number of tiles, cells or areas), `outlines`
+/// (a GeoJSON FeatureCollection of at most `max` of them, each with its name) and `area` (the boundary, or the box of the
+/// file, as a GeoJSON MultiPolygon of its outer rings). An error in the boundary or in the areas comes here, before the cut.
+#[wasm_bindgen]
+pub fn plan(size: f64, grid: &str, level: u8, boundary: Option<String>, areas: Option<String>, max: u32) -> Result<String, JsValue> {
+    let open = setup(size, 0);
+    let area = area_of(&open, &boundary)?;
+    let ring = |pts: &mut dyn Iterator<Item = (f64, f64)>| {
+        let mut v: Vec<String> = pts.map(|(x, y)| format!("[{x:.7},{y:.7}]")).collect();
+        if let Some(first) = v.first().cloned() {
+            v.push(first);
+        }
+        format!("[{}]", v.join(","))
+    };
+    let feature = |name: &str, rings: Vec<String>| {
+        let name = serde_json::to_string(name).expect("a text");
+        format!(r#"{{"type":"Feature","properties":{{"name":{name}}},"geometry":{{"type":"MultiPolygon","coordinates":[{}]}}}}"#,
+            rings.iter().map(|r| format!("[{r}]")).collect::<Vec<_>>().join(","))
+    };
+    let max = max as usize;
+    let (count, outlines): (usize, Vec<String>) = if grid == "areas" {
+        let text = areas.ok_or("give the GeoJSON file of the areas")?;
+        let list = pbfcut::areas::AreaList::parse(&text, "name", &|f| Err(format!("{f}: the page reads one GeoJSON file only")))?;
+        let f = list.areas.iter().take(max).map(|a| feature(&a.name, a.boundary.outer_rings().map(|r| ring(&mut r.iter().copied())).collect()));
+        (list.areas.len(), f.collect())
+    } else if grid == "h3" {
+        let res = pbfcut::cells::Resolution::try_from(level).map_err(|e| format!("the H3 resolution {level}: {e}"))?;
+        let list = pbfcut::cells::cells(&area, res);
+        let f = list.iter().take(max).map(|c| feature(&c.to_string(), vec![ring(&mut c.boundary().iter().map(|p| (p.lng(), p.lat())))]));
+        (list.len(), f.collect())
+    } else {
+        let list = pbfcut::tiles::tiles(&area, level);
+        let f = list.iter().take(max).map(|t| {
+            let (w, s, e, n) = t.bounds();
+            feature(&t.name(), vec![ring(&mut [(w, s), (e, s), (e, n), (w, n)].into_iter())])
+        });
+        (list.len(), f.collect())
+    };
+    let area = feature("area", area.outer_rings().map(|r| ring(&mut r.iter().copied())).collect());
+    Ok(format!(r#"{{"count":{count},"outlines":{{"type":"FeatureCollection","features":[{}]}},"area":{area}}}"#, outlines.join(",")))
 }
 
 #[wasm_bindgen]
