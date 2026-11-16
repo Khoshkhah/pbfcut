@@ -49,7 +49,7 @@ does not let the service worker run, the page uses one thread, and it says so un
 
 ## Speed
 
-The command line is about 1.6 times faster than the online page (see [Comparison](../explanation/comparison.md)).
+The command line is about 1.7 times faster than the online page (see [Comparison](../explanation/comparison.md)).
 
 ## Limits
 
