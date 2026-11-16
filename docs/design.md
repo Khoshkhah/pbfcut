@@ -7,8 +7,7 @@ Status (2026-11-16): M1 and M1b are done: the crate, the commands `tiles` and `c
 manual, and the memory budget. From M2, these are done: `pbfcut h3 --res R` (H3 cells of one resolution), the command
 `areas` (GeoJSON and osmium config lists of areas that do not overlap) and the boundary formats (GeoJSON, `.poly`, WKT,
 `--bbox`). The Python binding is done (section 5.1). From M3, the online page cuts to tiles, H3 cells and areas. Not
-done: the list of cells of mixed resolutions (`--cells`), and on the page the map before the cut, the CPU use and the
-`.zip` download.
+done: the list of cells of mixed resolutions (`--cells`), and on the page the CPU use and the `.zip` download.
 
 ## 1. Purpose
 
@@ -245,7 +244,9 @@ command line.
    (`web/e2e.py`). Geofabrik sends no CORS headers: the page gives a download link, and Get puts the
    file into OPFS through a relay, in 8 parts at the same time with `Range` (Luxembourg, 48 MB: 11 s, against 30 s with one
    connection; the dated file of `Content-Location`, one ETag, a part that fails starts again at its last byte; the test
-   is `web/get_e2e.py`) (the default is the owner's Cloudflare Worker; `web/serve.py` has one for tests). Not done: the map before the cut,
-   the CPU use, the `.zip` download.
+   is `web/get_e2e.py`) (the default is the owner's Cloudflare Worker; `web/serve.py` has one for tests). The map before the cut: the
+   plan of the library (`plan` in `web/src/lib.rs`), at most 20,000 files, the outline of a Geofabrik region as the
+   default boundary (`web/www/regions/`, from Geofabrik's `index-v1.json` by `web/regions.py`). Not done: the CPU use,
+   the `.zip` download.
 
 A step is done only when its part of the manual is done.

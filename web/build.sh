@@ -3,7 +3,8 @@
 #   web/www/pkg/          one thread, stable Rust: for a browser that is not cross-origin isolated.
 #   web/www/pkg-threads/  rayon on Web Workers (wasm-bindgen-rayon). It needs nightly Rust with rust-src (the
 #                         standard library is built again with atomics). The maximum memory is 4 GiB.
-#   web/www/regions.json  (in git) the regions of download.geofabrik.de (id, name, parent, file); REGIONS=1 refreshes it.
+#   web/www/regions.json  (in git) the regions of download.geofabrik.de (id, name, parent, file), and web/www/regions/ the
+#                         outline of each region (web/regions.py); REGIONS=1 refreshes them.
 # It needs wasm-bindgen 0.2.129 (the version in web/Cargo.toml).
 set -e
 NIGHTLY=${NIGHTLY:-nightly-2026-10-15}
@@ -16,16 +17,13 @@ RUSTFLAGS='-C target-feature=+atomics,+bulk-memory,+mutable-globals -C link-arg=
   cargo +$NIGHTLY build --release --target wasm32-unknown-unknown --manifest-path web/Cargo.toml --features threads \
   --target-dir target/web-threads -Z build-std=panic_abort,std
 wasm-bindgen --target web --out-dir web/www/pkg-threads target/web-threads/wasm32-unknown-unknown/release/pbfcut_web.wasm
-# Geofabrik sends no CORS headers, so the page cannot read its index: a copy is in git (web/www/regions.json).
-# REGIONS=1 gets a new copy (the Pages workflow); if Geofabrik does not answer, the copy in git stays.
+# Geofabrik sends no CORS headers, so the page cannot read its index: a copy is in git (web/www/regions.json, and the
+# outline of each region in web/www/regions/). REGIONS=1 gets a new copy (the Pages workflow); if Geofabrik does not
+# answer, the copy in git stays.
 if [ -n "$REGIONS" ]; then
-  if curl -sSf --retry 3 --retry-delay 5 https://download.geofabrik.de/index-v1-nogeom.json -o target/regions-index.json; then
-    python3 -c '
-import json, sys
-out = [[f["properties"]["id"], f["properties"]["name"], f["properties"].get("parent", ""), f["properties"]["urls"]["pbf"]]
-       for f in json.load(open(sys.argv[1]))["features"] if "pbf" in f["properties"].get("urls", {})]
-json.dump(out, sys.stdout, separators=(",", ":"))' target/regions-index.json > target/regions.json && mv target/regions.json web/www/regions.json
+  if curl -sSf --retry 3 --retry-delay 5 https://download.geofabrik.de/index-v1.json -o target/regions-index.json; then
+    python3 web/regions.py target/regions-index.json
   else
-    echo "build.sh: Geofabrik did not answer; the copy of regions.json in git stays" >&2
+    echo "build.sh: Geofabrik did not answer; the copy of the regions in git stays" >&2
   fi
 fi
