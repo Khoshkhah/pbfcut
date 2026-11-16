@@ -1,0 +1,15 @@
+flowchart TB
+    IN[("<b>Input .osm.pbf</b><br/>sorted by type, then id")]
+    P1["<b>Read 1, step 1: nodes</b><br/>the tile of each node inside"]
+    P2["<b>Read 1, step 2: ways</b><br/>the tiles of each way, and the<br/>nodes that each tile needs from outside"]
+    P3["<b>Read 1, step 3: relations</b><br/>the tiles of each relation, and the<br/>members of the complete relations"]
+    P4["<b>Read 1, step 4: extra nodes</b><br/>sorted by node id"]
+    W["<b>Read 2: write</b><br/>the nodes, the ways and the relations,<br/>each one time, to all its tiles"]
+    OUT[("<b>Output files</b><br/>one complete .osm.pbf for each tile")]
+    IN --> P1 --> P2 --> P3 --> P4 --> W --> OUT
+    classDef plan fill:#eef2ff,stroke:#8a6d1f
+    classDef write fill:#fff7e0,stroke:#8a6d1f
+    classDef file fill:#ffffff,stroke:#e0b000,stroke-width:3px
+    class P1,P2,P3,P4 plan
+    class W write
+    class IN,OUT file
