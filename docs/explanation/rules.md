@@ -78,35 +78,23 @@ does not read the input again.
 
 ```mermaid
 flowchart TB
-    subgraph T1["① The calling thread"]
-        R["<b>Read</b><br/>the next blocks<br/>and their extra rows"]
-    end
-
-    subgraph P1["② The threads of the pool"]
-        D["<b>Decode</b><br/>a block"]
-        G["<b>Route</b><br/>each element to its tiles,<br/>as compact bytes"]
-        D --> G
-    end
-
-    subgraph T2["③ The calling thread"]
-        C["<b>Collect</b><br/>the elements of each tile<br/>until a block of 8,000 is full"]
-    end
-
-    subgraph P2["④ The threads of the pool"]
-        K["<b>Pack</b><br/>the full blocks,<br/>with the next batch"]
-    end
-
-    subgraph T3["⑤ The calling thread"]
-        WR["<b>Write</b><br/>the blocks of each tile<br/>to its file, in input order"]
-    end
-
+    R["<b>① Read</b><br/>the next blocks<br/>and their extra rows"]
+    D["<b>② Decode and route</b><br/>each element to its tiles,<br/>as compact bytes"]
+    C["<b>③ Collect</b><br/>the elements of each tile<br/>until a block of 8,000 is full"]
+    K["<b>④ Pack</b><br/>the full blocks,<br/>with the next batch"]
+    W["<b>⑤ Write</b><br/>the blocks of each tile<br/>to its file, in input order"]
     R -- "a batch of blocks" --> D
-    G -- "the bytes of each tile" --> C
+    D -- "the bytes of each tile" --> C
     C -- "the full blocks" --> K
-    K --> WR
+    K --> W
+    classDef caller fill:#eef2ff
+    classDef pool fill:#fff7e0
+    class R,C,W caller
+    class D,K pool
 ```
 
-The calling thread reads the next batch while the pool decodes the batch before. Only the calling thread opens the
+Blue: the calling thread. Yellow: the thread pool. The calling thread reads the next batch while the pool decodes the
+batch before. Only the calling thread opens the
 files: in the browser, a file belongs to the thread that opened it.
 
 Each output file has full blocks of 8,000 elements. The elements of a tile wait in memory as compact bytes until they
