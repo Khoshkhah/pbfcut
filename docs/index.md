@@ -17,7 +17,3 @@ pbfcut is faster than `osmium extract` and uses much less memory: see [Compariso
 - [The rules of the cut](explanation/rules.md): what each tile file holds.
 - [Speed and memory](explanation/speed-and-memory.md): the time and the memory by zoom, and the memory budget.
 - [Comparison](explanation/comparison.md): pbfcut and osmium, the command line and the online page.
-
-## Planned
-
-- H3 cells: a list of cells of different resolutions.
