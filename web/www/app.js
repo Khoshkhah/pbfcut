@@ -65,7 +65,7 @@ for (let z = 2; z <= 16; z++) {
 // each popup: a title and its items [term, text]
 const HELP = {
   input: ["Input", [
-    ["Geofabrik region", "Search a region, then click Get or Download."],
+    ["Geofabrik region", "Geofabrik (download.geofabrik.de) is a website that gives free OpenStreetMap files of the countries and regions of the world. Search a region, then click Get or Download."],
     ["Get", "Puts the file into the storage of this site, through a relay (Geofabrik does not let web pages read its files)."],
     ["Download", "Saves the file on your computer. Then select it as a local file."],
     ["Local file", "A .osm.pbf file on this computer. The page does not upload it."],
