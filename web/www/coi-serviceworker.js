@@ -27,7 +27,12 @@ if (typeof window === 'undefined') {
             return;
         }
 
-        const request = (coepCredentialless && r.mode === "no-cors")
+        // pbfcut: each file of this site is checked with the server (Pages keeps files 10 minutes in the cache of the
+        // browser), so a page never mixes the files of two versions; an unchanged file costs a 304 answer
+        const local = r.method === "GET" && new URL(r.url).origin === self.location.origin;
+        const request = local
+            ? new Request(r.url, { cache: "no-cache", credentials: "same-origin" })
+            : (coepCredentialless && r.mode === "no-cors")
             ? new Request(r, {
                 credentials: "omit",
             })
