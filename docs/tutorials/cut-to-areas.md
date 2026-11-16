@@ -40,7 +40,8 @@ This tutorial cuts the OpenStreetMap data of Monaco into three areas, with one r
     A way with a node in an area is in the file of that area, with all its nodes, also the nodes outside the area.
 
     The area `middle` has a border in common with `west` and with `east`. A node on such a border goes to the first of
-    the two areas in the list: `west` or `east`. If two areas overlap, pbfcut stops with an error that names them and writes no file.
+    the two areas in the list: `west` or `east`. If two areas overlap, pbfcut stops with an error that names them and
+    writes no file.
 
 4. To use another property for the names, give `--name`. For example, with a property `code` in each feature:
 
