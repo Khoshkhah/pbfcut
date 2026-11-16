@@ -113,13 +113,19 @@ def main():
             page = open_page(browser, url, viewport={"width": 1280, "height": 900})
             # the map from the start, before any file
             page.wait_for_selector("#map canvas", timeout=60000)
-            assert page.text_content("#plan-text").startswith("Choose a file or a boundary"), page.text_content("#plan-text")
+            assert page.text_content("#plan-text").startswith("Choose a region, a file or a boundary"), page.text_content("#plan-text")
+            # a region of Geofabrik, before Get: the map shows the tiles in the outline of the region
+            page.fill("#region", "Europe / Monaco")
+            page.dispatch_event("#region", "input")
+            page.select_option("#zoom", "14")
+            page.wait_for_function("/tiles? that touch(es)? the boundary of Monaco/.test(document.querySelector('#plan-text').textContent)", timeout=60000)
+            print("desktop, a region before Get:", page.text_content("#plan-text"))
             # a boundary only (no file yet): the plan, and the zooms above 20,000 tiles are off
             europe = Path(tmp) / "europe.txt"
             europe.write_text("-10,35,30,70")
             page.set_input_files("#boundary", str(europe))
             page.select_option("#zoom", "8")
-            page.wait_for_function("/^[0-9,]+ tiles that touch the boundary/.test(document.querySelector('#plan-text').textContent)", timeout=60000)
+            page.wait_for_function("/^[0-9,]+ tiles that touch the boundary\\./.test(document.querySelector('#plan-text').textContent)", timeout=60000)
             off = page.evaluate("[...document.querySelectorAll('#zoom option')].filter(o => o.disabled).map(o => Number(o.value))")
             # the tiles of a box at zoom z: all tiles from its north-west corner to its south-east corner
             import math
@@ -141,6 +147,24 @@ def main():
             page.click("#theme")
             page.wait_for_function("planMap.isStyleLoaded() && !!planMap.getLayer('outlines-line')", timeout=60000)
             print("desktop, the theme: the layers stay")
+            # a local file with the name of a Geofabrik file: the outline of its region is the boundary of the map and of
+            # the cut; the files equal the command line with that outline
+            page.set_input_files("#boundary", [])
+            named = Path(tmp) / "monaco-latest.osm.pbf"
+            named.write_bytes(PBF.read_bytes())
+            page.click("label[for=src-f]")
+            page.set_input_files("#file", str(named))
+            page.select_option("#zoom", "14")
+            outline = ROOT / "web/www/regions/monaco.json"
+            want_o = cli_count("tiles", PBF, "--zoom", "14", "--boundary", outline)
+            page.wait_for_function(f"document.querySelector('#plan-text').textContent.startsWith('{want_o:,} tile') && /the boundary of Monaco/.test(document.querySelector('#plan-text').textContent)", timeout=60000)
+            print("desktop, a local Geofabrik file:", cut(page, threads=2))
+            got = save_all(page)
+            with tempfile.TemporaryDirectory() as o:
+                subprocess.run([ROOT / "target/release/pbfcut", "tiles", PBF, "--zoom", "14", "--boundary", outline, "-o", o], check=True, stdout=subprocess.DEVNULL)
+                want_files = {q.name: q.read_bytes() for q in Path(o).glob("*.osm.pbf")}
+            assert got == want_files, f"the cut in the outline: page {sorted(got)}, command line {sorted(want_files)}"
+            print(f"desktop, a local Geofabrik file: {len(got)} files equal the command line with the outline")
             page.click("label[for=src-f]")
             page.set_input_files("#file", str(PBF))
             page.set_input_files("#boundary", str(AREA))

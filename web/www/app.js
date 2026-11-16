@@ -53,6 +53,7 @@ $("theme").addEventListener("click", () => {
   document.documentElement.dataset.theme = dark ? "light" : "dark";
   try { localStorage.setItem("theme", document.documentElement.dataset.theme); } catch {}
   // a new style with no diff: "style.load" comes, and the layers of the plan come again with the colours of the theme
+  styleReady = false;
   map?.setStyle(style(), { diff: false });
 });
 
@@ -87,7 +88,7 @@ const HELP = {
     ["Resolution", "The mean area of an H3 cell."],
     ["Border", "Each file also gets the data this many metres around its tile or cell."],
     ["Threads", "The number of threads of the cut. Default: the number of cores."],
-    ["Boundary", "Optional: a GeoJSON, .poly (osmosis) or WKT file; the cut keeps only the data inside it. Without it, tiles and cells cover the bounding box of the file."],
+    ["Boundary", "Optional: a GeoJSON, .poly (osmosis) or WKT file; the cut keeps only the data inside it. Without it, a Geofabrik region (also a local file with the name of a Geofabrik file) uses the outline of the region; another file uses its bounding box."],
     ["GeoJSON", "In longitude and latitude (WGS 84): a Polygon, a MultiPolygon, a Feature or a FeatureCollection."],
   ]],
   progress: ["Progress", [
@@ -324,9 +325,10 @@ function ready() {
 // ---- the map before the cut: the outlines of the tiles, cells or areas that the cut uses (the same lists, from the
 // library, in a worker of its own), on a map of OpenFreeMap. It shows from the start (the world), the count, the levels
 // that the page can cut, and an error in the boundary or in the areas before the cut.
-const MAX_OUTLINES = 3000;    // the outlines that the map draws
 const MAX_FILES = 20000;      // the most tiles or cells of one cut on this page: a higher zoom or resolution is off
 let planWorker = null, planId = 0, planTimer = null, map = null, lastPlan = null, tooMany = false;
+// the style of the map can take layers (MapLibre's isStyleLoaded() stays false while base-map tiles load)
+let styleReady = false, planWhere = "";
 const dark = () => document.documentElement.dataset.theme
   ? document.documentElement.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
 const style = () => `https://tiles.openfreemap.org/styles/${dark() ? "fiord" : "positron"}`;
@@ -342,21 +344,47 @@ const updateStart = () => {
 const levels = (top) => {
   for (const id of ["zoom", "res"]) for (const o of $(id).options) o.disabled = top !== null && id === (kind() === "h3" ? "res" : "zoom") && Number(o.value) > top;
 };
+// The outline of a Geofabrik region (the same polygon as its .poly file, from web/www/regions/): the boundary of a cut of
+// that region when no boundary file is given. The region of the input: the chosen region, or a local file with the name
+// of a Geofabrik file (<name>-latest.osm.pbf or <name>-<yymmdd>.osm.pbf) that one region has. Gives {name, text} or null.
+const outlineCache = new Map();
+async function regionOutline() {
+  let r = source() === "region" ? region : null;
+  const f = source() === "file" ? $("file").files[0] : null;
+  const m = f?.name.match(/^(.+?)-(latest|\d{6})\.osm\.pbf$/);
+  if (m) {
+    const hits = regions.filter((x) => x.pbf.split("/").pop() === `${m[1]}-latest.osm.pbf`);
+    if (hits.length === 1) r = hits[0];
+  }
+  if (!r) return null;
+  if (!outlineCache.has(r.id)) {
+    outlineCache.set(r.id, fetch(`regions/${r.id.replace(/[^a-z0-9_-]/gi, "_")}.json?v=dev`).then((x) => (x.ok ? x.text() : null), () => null));
+  }
+  const text = await outlineCache.get(r.id);
+  return text ? { name: r.label.split(" / ").pop(), text } : null;
+}
+// the boundary of a cut: the boundary file, else the outline of the region, else none (the box of the file)
+async function boundaryOf() {
+  const f = $("boundary").files[0];
+  if (f) return { text: await f.text(), where: "the boundary" };
+  const o = await regionOutline();
+  return o ? { text: o.text, where: `the boundary of ${o.name}` } : null;
+}
 function askPlan() {
   clearTimeout(planTimer);
-  const input = source() === "file" ? $("file").files[0] : regionReady ? region : null;
-  const boundary = $("boundary").files[0];
-  const can = kind() === "areas" ? $("areas").files.length > 0 : !!(input || boundary);
-  if (!can) {
-    showPlan({ hint: kind() === "areas" ? "Choose the file of the areas: the map then shows them."
-      : "Choose a file or a boundary: the map then shows the tiles or cells of the cut." });
-    return;
-  }
   planTimer = setTimeout(async () => {
     const id = ++planId;
+    const input = source() === "file" ? $("file").files[0] : regionReady ? region : null;
+    const boundary = await boundaryOf();
+    if (kind() === "areas" ? !$("areas").files.length : !(input || boundary)) {
+      showPlan({ hint: kind() === "areas" ? "Choose the file of the areas: the map then shows them."
+        : "Choose a region, a file or a boundary: the map then shows the tiles or cells of the cut." });
+      return;
+    }
+    planWhere = boundary?.where ?? "the box of the file";
     const msg = {
-      plan: true, id, kind: kind(), level: Number($(kind() === "h3" ? "res" : "zoom").value), max: MAX_OUTLINES, limit: MAX_FILES,
-      boundary: boundary ? await boundary.text() : null,
+      plan: true, id, kind: kind(), level: Number($(kind() === "h3" ? "res" : "zoom").value), max: MAX_FILES, limit: MAX_FILES,
+      boundary: boundary?.text ?? null,
       areas: kind() === "areas" ? await areasText($("areas").files[0]) : null,
       ...(!input ? {} : source() === "file" ? { file: input } : { region: fileName(input.id) }),
     };
@@ -376,16 +404,19 @@ function showPlan({ plan, error, hint }) {
   } else {
     const word = { tiles: "tile", h3: "cell", areas: "area" }[kind()];
     const s = plan.count === 1 ? "" : "s";
-    const where = kind() === "areas" ? "" : `${plan.count === 1 ? " that touches" : " that touch"} ${$("boundary").files[0] ? "the boundary" : "the box of the file"}`;
+    const where = kind() === "areas" ? "" : `${plan.count === 1 ? " that touches" : " that touch"} ${planWhere}`;
     levels(plan.max_level);
     tooMany = kind() !== "areas" && plan.count > MAX_FILES;
     text.classList.toggle("bad", tooMany);
     text.textContent = tooMany
       ? `${plan.count.toLocaleString("en")} ${word}s: this page cuts at most ${MAX_FILES.toLocaleString("en")}. Choose a lower ${kind() === "h3" ? "resolution" : "zoom"} or a smaller boundary.`
       : `${plan.count.toLocaleString("en")} ${word}${s}${where}.`
-        + (plan.count > MAX_OUTLINES ? ` The map shows ${MAX_OUTLINES.toLocaleString("en")} of them.` : "")
         + (kind() === "areas" ? "" : ` Only the ${word}s with data get a file.`);
-    lastPlan = plan;
+    // too many: only the boundary (a part of the outlines looks like a cut of a part of the area)
+    lastPlan = tooMany ? { ...plan, outlines: EMPTY } : plan;
+    // the map zoom at which one tile or cell is a few pixels wide: its outlines fade in from there (an H3 cell of
+    // resolution r is about as large as a tile of zoom 2r - 1)
+    lastPlan.level = kind() === "areas" ? 0 : kind() === "h3" ? 2 * Number($("res").value) - 1 : Number($("zoom").value);
   }
   updateStart();
   drawPlan();
@@ -400,10 +431,10 @@ async function drawPlan() {
     map = new maplibregl.Map({ container: "map", style: style(), center: [10, 30], zoom: 0.6, attributionControl: { compact: true }, dragRotate: false });
     self.planMap = map;                 // for the test
     map.touchZoomRotate.disableRotation();
-    map.on("style.load", addLayers);
+    map.on("style.load", () => { styleReady = true; addLayers(); });
     // the attribution stays behind its (i) button: open, it covers a part of a small map
     map.once("load", () => document.querySelector("#map .maplibregl-ctrl-attrib")?.classList.remove("maplibregl-compact-show"));
-  } else if (map.isStyleLoaded()) addLayers();
+  } else if (styleReady) addLayers();
   if (!lastPlan) return;
   // the view: the boundary and all outlines that the map shows
   const b = new maplibregl.LngLatBounds();
@@ -422,7 +453,11 @@ function addLayers() {
     else for (const [k, v] of Object.entries(paint)) map.setPaintProperty(spec.id, k, v);
   };
   layer({ id: "outlines-fill", type: "fill", source: "outlines" }, { "fill-color": c.fill, "fill-opacity": c.fillOpacity });
-  layer({ id: "outlines-line", type: "line", source: "outlines" }, { "line-color": c.line, "line-width": 1.2 });
+  // the outlines show when a tile or cell is at least about 6 pixels wide (MapLibre draws 512-pixel tiles: a tile of
+  // zoom z is 512 * 2^(m - z) pixels wide at map zoom m); smaller, the fill alone shows the area
+  const at = Math.max(0, (lastPlan?.level ?? 0) - 6.5);
+  layer({ id: "outlines-line", type: "line", source: "outlines" }, { "line-color": c.line, "line-width": 1.2,
+    "line-opacity": ["interpolate", ["linear"], ["zoom"], at, 0, at + 1.5, 1] });
   layer({ id: "area-line", type: "line", source: "area" }, { "line-color": c.area, "line-width": 2.5, "line-dasharray": [2, 1.2] });
 }
 askPlan();     // the map from the start: the world, and what to choose
@@ -446,7 +481,7 @@ $("start").addEventListener("click", async () => {
   $("result").hidden = true;
   $("error").hidden = true;
   await cleaned;
-  const boundary = $("boundary").files[0] ? await $("boundary").files[0].text() : null;
+  const boundary = (await boundaryOf())?.text ?? null;      // the boundary file, else the outline of the region
   const steps = STEPS[kind()];
   const msg = {
     kind: kind(), areas: kind() === "areas" ? await areasText($("areas").files[0]) : null,
