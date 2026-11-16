@@ -9,6 +9,8 @@ pbfcut compare DIR_A DIR_B
 OPTIONS: [--boundary FILE | --bbox W,S,E,N] [--border METRES] [--complete TYPES] [--memory SIZE] [--temp DIR] [--steps]
 ```
 
+To use the cut from Python, see [Python](python.md).
+
 The input file must be sorted by type, then by id (`Sort.Type_then_ID`), as the files of Geofabrik.
 
 ## pbfcut tiles

@@ -6,7 +6,7 @@ include it.
 Status (2026-11-16): M1 and M1b are done: the crate, the commands `tiles` and `compare`, the golden tests, CI, the
 manual, and the memory budget. From M2, these are done: `pbfcut h3 --res R` (H3 cells of one resolution), the command
 `areas` (GeoJSON and osmium config lists of areas that do not overlap) and the boundary formats (GeoJSON, `.poly`, WKT,
-`--bbox`). The list of cells of mixed resolutions (`--cells`) is not done.
+`--bbox`). The Python binding is done (section 5.1). The list of cells of mixed resolutions (`--cells`) is not done.
 
 ## 1. Purpose
 
@@ -28,7 +28,8 @@ the area of each node in one compressed list for all areas.
 
 - One crate, `pbfcut`, for the native targets and for `wasm32-unknown-unknown`, with the same code.
 - Modules: `decode` (the PBF decoder), `write` (the PBF writer), `extract` (the cut of one area), `tilecut` (the cut
-  of many areas), `tiles`, `boundary`, `store` (rows in temporary files, the sort on disk), `elements`, `util`.
+  of many areas), `job` (the jobs of the command: one cut to a folder, with the file names, counts and sizes, and
+  `compare`; the command and the Python binding call it), `tiles`, `boundary`, `store` (rows in temporary files, the sort on disk), `elements`, `util`.
 - Dependencies: `flate2` with `zlib-rs` and `miniz_oxide` (pure Rust, so every target writes the same bytes), `rayon`,
   `serde_json`, `h3o` (H3 in pure Rust, the same cell ids as the H3 library 4; it builds for wasm32; no `std` feature,
   so its math is `libm` and the cells do not change with the target).
@@ -162,6 +163,25 @@ FILE: GeoJSON, an osmosis .poly file or WKT, found from the text
 - `--memory SIZE`: the memory budget. `--temp DIR`: the folder of the temporary files.
 - Every command writes the numbers of elements of each output to standard output as JSON.
 
+### 5.1 The Python binding
+
+`python/` is the crate `pbfcut-py` (PyO3, maturin, abi3 for Python 3.9 and later). It is not a member of the library
+crate: the library and the command do not depend on it.
+
+- **Thin.** The binding only converts the arguments and the results. All logic is in `pbfcut::job`, so the Python
+  files equal the files of the command line (Rust is the design, Python is a binding).
+- **API.** `cut_tiles`, `cut_cells`, `cut_areas` and `compare`, with the options of the command line as keyword
+  arguments. A cut returns the names, the element counts and the sizes of the files, not the data, so the memory stays
+  in the budget.
+- **GIL and errors.** The cut releases the GIL. An error is `pbfcut.Error` with the message of the library. The
+  types are in `python/pbfcut.pyi`.
+- **Process settings.** `--memory` and `--temp` are settings of the process (`store::set_memory`). The binding sets
+  them for one cut and restores them. Two cuts at the same time with different settings are not supported.
+- **Tests.** `python/tests` compares the Python results with the command line on Monaco, for tiles, H3 cells and areas.
+- **Release.** `.github/workflows/python.yml` builds the wheels (Linux x86_64 and aarch64, macOS arm64 and x86_64,
+  Windows x86_64), tests each one, and publishes to PyPI on a tag `v*` with trusted publishing (environment `pypi`).
+  The tag must equal the version in `python/Cargo.toml`.
+
 ## 6. The manual, GitHub Pages and the online page
 
 The manual:
@@ -206,7 +226,7 @@ command line.
   boundary to one "home" area. A golden file never changes to make a test pass. The bytes
   are equal on Linux x86-64 and on macOS arm64.
 - CI on every push and pull request: `cargo test --release`, the wasm32 build, the command line on Monaco, and
-  `mkdocs build --strict`.
+  `mkdocs build --strict`. The workflow `python.yml` builds the wheels and runs the Python tests on each platform.
 
 ## 8. Steps
 

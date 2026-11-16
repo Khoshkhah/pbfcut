@@ -13,6 +13,7 @@ pbfcut is faster than `osmium extract` and uses much less memory: see [Compariso
 - [Cut a file in your browser](tutorials/online-page.md): the [online page](https://khoshkhah.github.io/pbfcut/), with
   no installation.
 - [The command line](reference/cli.md): all commands and options.
+- [Python](reference/python.md): `pip install pbfcut`, the same cut in Python.
 - [Boundary formats](reference/boundaries.md): GeoJSON, polygon files (`.poly`), WKT and boxes.
 - [The rules of the cut](explanation/rules.md): what each tile file holds.
 - [Speed and memory](explanation/speed-and-memory.md): the time and the memory by zoom, and the memory budget.
