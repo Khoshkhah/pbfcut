@@ -57,7 +57,8 @@ $("theme").addEventListener("click", () => {
 // ---- the zoom list: each zoom with the size of its tiles (a square) at the equator
 for (let z = 2; z <= 16; z++) {
   const km = 40075 / 2 ** z, w = km >= 10 ? Math.round(km) : km.toFixed(1);
-  $("zoom").append(new Option(`${z} · ${w} × ${w} km`, z, false, z === 8));
+  // a figure space before a zoom of one digit, and two em spaces after it: the numbers line up (option text has no CSS)
+  $("zoom").append(new Option(`${String(z).padStart(2, "\u2007")}\u2003\u2003${w} × ${w} km`, z, false, z === 8));
 }
 
 // ---- the help popups (the buttons "?")
