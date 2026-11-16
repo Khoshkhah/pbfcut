@@ -29,6 +29,7 @@ use crate::decode::{decode_block, read_block, Buffers};
 use crate::elements::{RawNode, RawSink, RawWay};
 use crate::store::{Codec, Writer};
 use crate::tiles::Tile;
+use crate::cells::{cell_of, near_cell, CellIndex, Resolution};
 use crate::util::FxHashMap;
 use rayon::prelude::*;
 use std::collections::BTreeSet;
@@ -274,6 +275,31 @@ mod tests {
         }
         std::fs::remove_dir_all(&dir).unwrap();
         assert!(got.iter().filter(|g| !g.is_empty()).count() > 4);
+    }
+
+    #[test]
+    fn the_cut_of_cells_into_a_sink_equals_the_cut_into_a_folder() {
+        let data = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/data");
+        let pbf = data.join("monaco.osm.pbf");
+        let b = Boundary::parse(&std::fs::read_to_string(data.join("monaco.geojson")).unwrap()).unwrap();
+        let cells = crate::cells::cells(&b, Resolution::Nine);
+        let open = || std::fs::File::open(&pbf).map_err(|e| e.to_string());
+        let complete = ["multipolygon", "boundary"];
+        let dir = std::env::temp_dir().join(format!("pbfcut-cell-sink-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        cut_to_cells(open, &b, &cells, &dir, &complete, 25.0).unwrap();
+        let mut got = vec![Vec::new(); cells.len()];
+        cut_cells_to_sink(open, &b, &cells, &complete, 25.0, &mut |t, bytes| {
+            got[t as usize].extend_from_slice(bytes);
+            Ok(())
+        })
+        .unwrap();
+        for (c, got) in cells.iter().zip(&got) {
+            let want = std::fs::read(dir.join(format!("{c}.osm.pbf"))).unwrap_or_default();
+            assert!(*got == want, "cell {c}: {} bytes in the sink, {} in the folder", got.len(), want.len());
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert!(got.iter().filter(|g| !g.is_empty()).count() > 20);
     }
 
     /// With a [`NodeUses`], each tile file has a junctions file: rows sorted by node, with the flags of `of_node` and
@@ -797,8 +823,7 @@ fn present_ids(ids: crate::store::Rows, wanted: &[i64]) -> io::Result<Vec<i64>> 
 /// Pass 1: the runs of the nodes inside, the nodes inside with their tiles, and whether the block has ways or relations.
 struct Nodes<'a> {
     boundary: &'a Boundary,
-    z: u8,
-    index: &'a TileIndex,
+    grid: &'a Grid<'a>,
     /// the border of a tile, in metres: a node inside the area this near another tile goes to `near` with that tile
     border_m: f64,
     runs: BlockRuns,
@@ -811,26 +836,99 @@ struct Nodes<'a> {
     ids: IdPack,
 }
 
-/// The tiles of a cut, of one zoom or of mixed zooms (no tile in another): the tile of a point is the tile of the finest
-/// zoom that holds it, found from the finest zoom up.
-struct TileIndex {
+/// The areas of a cut: map tiles (of one zoom, or of mixed zooms with no tile in another) or H3 cells of one
+/// resolution. A point is in at most one area. The number of an area is its place in the list. Only this type knows the
+/// kind of area: the rest of the cut uses the numbers.
+enum Grid<'a> {
     /// the zooms of the tiles, the finest first
-    zooms: Vec<u8>,
-    map: FxHashMap<(u8, u32, u32), u32>,
+    Tiles { list: &'a [Tile], zooms: Vec<u8>, map: FxHashMap<(u8, u32, u32), u32> },
+    Cells { list: &'a [CellIndex], res: Resolution, map: FxHashMap<CellIndex, u32> },
 }
 
-impl TileIndex {
-    fn new(tiles: &[Tile]) -> TileIndex {
-        let mut zooms: Vec<u8> = tiles.iter().map(|t| t.z).collect();
+impl<'a> Grid<'a> {
+    fn tiles(list: &'a [Tile]) -> Grid<'a> {
+        let mut zooms: Vec<u8> = list.iter().map(|t| t.z).collect();
         zooms.sort_unstable_by(|a, b| b.cmp(a));
         zooms.dedup();
-        TileIndex { zooms, map: tiles.iter().enumerate().map(|(i, t)| ((t.z, t.x, t.y), i as u32)).collect() }
+        Grid::Tiles { list, zooms, map: list.iter().enumerate().map(|(i, t)| ((t.z, t.x, t.y), i as u32)).collect() }
     }
 
-    /// The tile that holds the point (`Tile::of` of its zoom: `Tile::of` of a finer zoom, shifted, is the same tile).
+    fn cells(list: &'a [CellIndex]) -> Result<Grid<'a>, String> {
+        let res = list.first().map_or(Resolution::Zero, |c| c.resolution());
+        if list.iter().any(|c| c.resolution() != res) {
+            return Err("the cell cut needs cells of one resolution".into());
+        }
+        Ok(Grid::Cells { list, res, map: list.iter().enumerate().map(|(i, &c)| (c, i as u32)).collect() })
+    }
+
+    fn len(&self) -> usize {
+        match self {
+            Grid::Tiles { list, .. } => list.len(),
+            Grid::Cells { list, .. } => list.len(),
+        }
+    }
+
+    /// Are all areas of one zoom or of one resolution (the cut with a border needs it)?
+    fn one_level(&self) -> bool {
+        match self {
+            Grid::Tiles { zooms, .. } => zooms.len() <= 1,
+            Grid::Cells { .. } => true,
+        }
+    }
+
+    /// The area that holds the point. A tile: `Tile::of` of the finest zoom, shifted to the zoom of the tile (the same
+    /// tile as `Tile::of` of that zoom).
     fn of(&self, lon: f64, lat: f64) -> Option<u32> {
-        let fine = Tile::of(*self.zooms.first()?, lon, lat);
-        self.zooms.iter().find_map(|&z| self.map.get(&(z, fine.x >> (fine.z - z), fine.y >> (fine.z - z))).copied())
+        match self {
+            Grid::Tiles { zooms, map, .. } => {
+                let fine = Tile::of(*zooms.first()?, lon, lat);
+                zooms.iter().find_map(|&z| map.get(&(z, fine.x >> (fine.z - z), fine.y >> (fine.z - z))).copied())
+            }
+            Grid::Cells { res, map, .. } => map.get(&cell_of(*res, lon, lat)?).copied(),
+        }
+    }
+
+    /// Each other area (of the same zoom or resolution) within `m` metres of the point, to `f`.
+    fn near(&self, lon: f64, lat: f64, m: f64, mut f: impl FnMut(u32)) {
+        match self {
+            Grid::Tiles { zooms, map, .. } => {
+                let me = Tile::of(zooms[0], lon, lat);
+                for (dx, dy) in [(-1i64, -1i64), (0, -1), (1, -1), (-1, 0), (1, 0), (-1, 1), (0, 1), (1, 1)] {
+                    let (x, y) = (me.x as i64 + dx, me.y as i64 + dy);
+                    if x < 0 || y < 0 {
+                        continue;
+                    }
+                    let other = Tile { z: me.z, x: x as u32, y: y as u32 };
+                    if let Some(&o) = map.get(&(other.z, other.x, other.y)) {
+                        if near_tile(other, lon, lat, m) {
+                            f(o);
+                        }
+                    }
+                }
+            }
+            Grid::Cells { res, map, .. } => {
+                let Some(me) = cell_of(*res, lon, lat) else { return };
+                // the neighbours of ring 1 only: `cut_to_cells` refuses a border wider than half the edge of a cell
+                for other in me.grid_disk_safe(1).filter(|&c| c != me) {
+                    if let Some(&o) = map.get(&other) {
+                        if near_cell(other, lon, lat, m) {
+                            f(o);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// The name of the file of area `i`, with no extension: `z_x_y` for a tile, the index for a cell.
+    fn file(&self, i: u32) -> String {
+        match self {
+            Grid::Tiles { list, .. } => {
+                let t = list[i as usize];
+                format!("{}_{}_{}", t.z, t.x, t.y)
+            }
+            Grid::Cells { list, .. } => list[i as usize].to_string(),
+        }
     }
 }
 
@@ -848,7 +946,7 @@ impl RawSink for Nodes<'_> {
         widen(&mut self.span, id);
         self.ids.push(id);
         let tile = if self.boundary.contains(lon, lat) {
-            self.index.of(lon, lat)
+            self.grid.of(lon, lat)
         } else {
             None
         };
@@ -858,19 +956,8 @@ impl RawSink for Nodes<'_> {
             }
             // the other tiles whose border holds the node
             if self.border_m > 0.0 {
-                let me = Tile::of(self.z, lon, lat);
-                for (dx, dy) in [(-1i64, -1i64), (0, -1), (1, -1), (-1, 0), (1, 0), (-1, 1), (0, 1), (1, 1)] {
-                    let (x, y) = (me.x as i64 + dx, me.y as i64 + dy);
-                    if x < 0 || y < 0 {
-                        continue;
-                    }
-                    let other = Tile { z: self.z, x: x as u32, y: y as u32 };
-                    if let Some(&o) = self.index.map.get(&(other.z, other.x, other.y)) {
-                        if near_tile(other, lon, lat, self.border_m) {
-                            self.near.push((id, o));
-                        }
-                    }
-                }
+                let near = &mut self.near;
+                self.grid.near(lon, lat, self.border_m, |o| near.push((id, o)));
             }
         }
         self.runs.push(id, tile);
@@ -1122,9 +1209,47 @@ pub fn cut_to_tiles<R: Read + Seek + Send>(
     border_m: f64,
     node_uses: Option<&dyn NodeUses>,
 ) -> Result<Vec<CutCounts>, String> {
+    cut_to_dir(open, boundary, &Grid::tiles(tiles), dir, complete, border_m, node_uses)
+}
+
+/// [`cut_to_tiles`] for H3 cells of one resolution ([`crate::cells::cells`]): the file of a cell goes into `dir` as
+/// `<cell index>.osm.pbf`, for example `8939604a4ffffff.osm.pbf`. The rules are the rules of the tiles. `border_m` must be
+/// less than half the mean edge of a cell (the cut looks for the border in the six neighbours of a cell only).
+pub fn cut_to_cells<R: Read + Seek + Send>(
+    open: impl Fn() -> Result<R, String>,
+    boundary: &Boundary,
+    cells: &[CellIndex],
+    dir: &Path,
+    complete: &[&str],
+    border_m: f64,
+) -> Result<Vec<CutCounts>, String> {
+    cut_to_dir(open, boundary, &cell_grid(cells, border_m)?, dir, complete, border_m, None)
+}
+
+/// The grid of the cells, with an error for cells of two resolutions or a border of half the edge of a cell or more.
+fn cell_grid(cells: &[CellIndex], border_m: f64) -> Result<Grid<'_>, String> {
+    if let Some(c) = cells.first() {
+        let half = c.resolution().edge_length_m() / 2.0;
+        if border_m >= half {
+            return Err(format!("the border ({border_m} m) must be less than half the edge of a cell ({half:.0} m)"));
+        }
+    }
+    Grid::cells(cells)
+}
+
+/// The cut into the files of a folder (the tiles or the cells), with the temporary files in a folder of their own.
+fn cut_to_dir<R: Read + Seek + Send>(
+    open: impl Fn() -> Result<R, String>,
+    boundary: &Boundary,
+    grid: &Grid,
+    dir: &Path,
+    complete: &[&str],
+    border_m: f64,
+    node_uses: Option<&dyn NodeUses>,
+) -> Result<Vec<CutCounts>, String> {
     let tmp = crate::store::temp_dir().join(format!("pbfcut-tiles-{}-{}", std::process::id(), dir.as_os_str().len()));
     std::fs::create_dir_all(&tmp).map_err(|e| format!("{}: {e}", tmp.display()))?;
-    let cut = cut(open, boundary, tiles, complete, border_m, Files::Dir(tmp.clone()), Some(dir), None, false, node_uses);
+    let cut = cut(open, boundary, grid, complete, border_m, Files::Dir(tmp.clone()), Some(dir), None, false, node_uses);
     let _ = std::fs::remove_dir_all(&tmp);
     Ok(cut?.0)
 }
@@ -1185,7 +1310,7 @@ pub fn cut_to_store<R: Read + Seek + Send>(
     };
     #[cfg(target_arch = "wasm32")]
     let files = Files::Store(Chunks::new(&*crate::store::temp_store()).map_err(|e| format!("a temporary file of the tile cut: {e}"))?);
-    let (counts, parts) = cut(open, boundary, tiles, complete, 0.0, files, None, None, true, None)?;
+    let (counts, parts) = cut(open, boundary, &Grid::tiles(tiles), complete, 0.0, files, None, None, true, None)?;
     Ok(TileFiles { parts, tiles: tiles.iter().copied().zip(counts).collect() })
 }
 
@@ -1202,7 +1327,7 @@ pub fn cut_to_store_build<R: Read + Seek + Send>(
 ) -> Result<TileFiles, String> {
     let chunks = Chunks::new(&*crate::store::temp_store()).map_err(|e| format!("a temporary file of the tile cut: {e}"))?;
     let complete: &[&str] = if multipolygons { &["multipolygon"] } else { &[] };
-    let (counts, parts) = cut(open, boundary, tiles, complete, border_m, Files::Store(chunks), None, None, false, node_uses)?;
+    let (counts, parts) = cut(open, boundary, &Grid::tiles(tiles), complete, border_m, Files::Store(chunks), None, None, false, node_uses)?;
     Ok(TileFiles { parts, tiles: tiles.iter().copied().zip(counts).collect() })
 }
 
@@ -1216,12 +1341,38 @@ pub fn cut_to_sink<R: Read + Seek + Send>(
     tiles: &[Tile],
     complete: &[&str],
     border_m: f64,
+    sink: Sink,
+) -> Result<Vec<CutCounts>, String> {
+    cut_into_sink(open, boundary, &Grid::tiles(tiles), complete, border_m, sink)
+}
+
+/// [`cut_to_cells`], with each cell file given to `sink` (in pieces, cell by cell), as [`cut_to_sink`] does for the
+/// tiles. The cell files are equal to the files of [`cut_to_cells`].
+pub fn cut_cells_to_sink<R: Read + Seek + Send>(
+    open: impl Fn() -> Result<R, String>,
+    boundary: &Boundary,
+    cells: &[CellIndex],
+    complete: &[&str],
+    border_m: f64,
+    sink: Sink,
+) -> Result<Vec<CutCounts>, String> {
+    cut_into_sink(open, boundary, &cell_grid(cells, border_m)?, complete, border_m, sink)
+}
+
+/// The cut into a sink (the tiles or the cells), with the temporary files in a folder natively, in the store of the
+/// page in the browser.
+fn cut_into_sink<R: Read + Seek + Send>(
+    open: impl Fn() -> Result<R, String>,
+    boundary: &Boundary,
+    grid: &Grid,
+    complete: &[&str],
+    border_m: f64,
     mut sink: Sink,
 ) -> Result<Vec<CutCounts>, String> {
     #[cfg(target_arch = "wasm32")]
     {
         let files = Files::Store(Chunks::new(&*crate::store::temp_store()).map_err(|e| format!("a temporary file of the tile cut: {e}"))?);
-        Ok(cut(open, boundary, tiles, complete, border_m, files, None, Some(&mut sink), false, None)?.0)
+        Ok(cut(open, boundary, grid, complete, border_m, files, None, Some(&mut sink), false, None)?.0)
     }
     #[cfg(not(target_arch = "wasm32"))]
     {
@@ -1229,7 +1380,7 @@ pub fn cut_to_sink<R: Read + Seek + Send>(
         let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let tmp = crate::store::temp_dir().join(format!("pbfcut-sink-{}-{n}", std::process::id()));
         std::fs::create_dir_all(&tmp).map_err(|e| format!("{}: {e}", tmp.display()))?;
-        let cut = cut(open, boundary, tiles, complete, border_m, Files::Dir(tmp.clone()), None, Some(&mut sink), false, None);
+        let cut = cut(open, boundary, grid, complete, border_m, Files::Dir(tmp.clone()), None, Some(&mut sink), false, None);
         let _ = std::fs::remove_dir_all(&tmp);
         Ok(cut?.0)
     }
@@ -1242,7 +1393,7 @@ pub fn cut_to_sink<R: Read + Seek + Send>(
 fn cut<R: Read + Seek + Send>(
     open: impl Fn() -> Result<R, String>,
     boundary: &Boundary,
-    tiles: &[Tile],
+    grid: &Grid,
     complete: &[&str],
     border_m: f64,
     files: Files,
@@ -1260,17 +1411,16 @@ fn cut<R: Read + Seek + Send>(
         return Err("the region file is not sorted by type and id (Sort.Type_then_ID)".into());
     }
     let parts = Parts { files, waiting: Default::default() };
-    let Some(z) = tiles.first().map(|t| t.z) else {
+    if grid.len() == 0 {
         return Ok((Vec::new(), parts));
-    };
-    if border_m > 0.0 && tiles.iter().any(|t| t.z != z) {
+    }
+    if border_m > 0.0 && !grid.one_level() {
         return Err("the tile cut with a border needs tiles of one zoom".into());
     }
-    let index = TileIndex::new(tiles);
     let store = crate::store::temp_store();
     let store = &*store;
     // the tiles with a node inside: only these have a file
-    let mut with_file = vec![false; tiles.len()];
+    let mut with_file = vec![false; grid.len()];
     // 1. the book of the nodes, and the tiles with a node inside
     let (mut nodes, mut node_blocks, mut ways_at) = (Book::default(), Vec::new(), None);
     let mut near: Vec<(i64, u32)> = Vec::new();
@@ -1281,8 +1431,7 @@ fn cut<R: Read + Seek + Send>(
         |b, buf| {
             let mut s = Nodes {
                 boundary,
-                z,
-                index: &index,
+                grid,
                 border_m,
                 runs: BlockRuns::new(),
                 own: Vec::new(),
@@ -1605,7 +1754,7 @@ fn cut<R: Read + Seek + Send>(
         // read 2: each element straight into its tile files, once: the nodes, the
         // junctions (the build by tiles), the ways, the relations
         let with_file = &with_file;
-        let mut writers = write::Writers::new(tiles.len(), timestamp, raw, write::outputs(tiles, dir, &parts, sink)?)?;
+        let mut writers = write::Writers::new(grid.len(), timestamp, raw, write::outputs(grid, dir, &parts, sink)?)?;
         let mut rows = pairs.peekable();
         write::route_blocks(
             &mut r,
@@ -1680,9 +1829,9 @@ fn cut<R: Read + Seek + Send>(
         let counts = writers.into_counts();
         // the junctions files next to the tile files (the build by tiles into a folder)
         if let (Some(dir), true) = (dir, build) {
-            for (t, tile) in tiles.iter().enumerate() {
+            for t in 0..grid.len() {
                 if with_file[t] {
-                    write_junctions(&parts, t as u32, &dir.join(format!("{}_{}_{}.junctions", tile.z, tile.x, tile.y)))?;
+                    write_junctions(&parts, t as u32, &dir.join(format!("{}.junctions", grid.file(t as u32))))?;
                 }
             }
         }
