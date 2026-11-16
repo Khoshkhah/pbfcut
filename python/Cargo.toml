@@ -1,0 +1,22 @@
+[package]
+name = "pbfcut-py"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+publish = false
+description = "The Python binding of pbfcut: it only converts the arguments and the results"
+
+[lib]
+name = "pbfcut_py"
+crate-type = ["cdylib"]
+
+[dependencies]
+pbfcut = { path = ".." }
+pyo3 = { version = "0.30", features = ["abi3-py39", "extension-module"] }
+# the pool of the argument `threads`: the version of the library
+rayon = "1.12"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 16

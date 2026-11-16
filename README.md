@@ -14,7 +14,7 @@
   tiles. See the [comparison](https://khoshkhah.github.io/pbfcut/manual/explanation/comparison/).
 - **Complete files.** Each output is a complete `.osm.pbf` file: each way with all its nodes, and each multipolygon and
   boundary with all its members ([the rules](https://khoshkhah.github.io/pbfcut/manual/explanation/rules/)).
-- **Command line, Rust library, or browser.** The same Rust code runs natively and in WebAssembly.
+- **Command line, Python, Rust library, or browser.** The same Rust code runs natively and in WebAssembly.
 
 **Try it online:** https://khoshkhah.github.io/pbfcut/ (no installation; the file stays on your computer).
 
@@ -46,6 +46,19 @@ pbfcut h3 sweden-latest.osm.pbf --res 5 -o cells/         # cells/<cell index>.o
 
 Options: `--boundary AREA.geojson`, `--border METRES`, `--complete TYPES`, `--memory SIZE` (for example `512M` on a
 computer with little memory). See [the command line](https://khoshkhah.github.io/pbfcut/manual/reference/cli/).
+
+## Use from Python
+
+```bash
+pip install pbfcut
+```
+
+```python
+import pbfcut
+r = pbfcut.cut_tiles("sweden-latest.osm.pbf", "tiles", zoom=8, memory="1G")
+```
+
+See [Python](https://khoshkhah.github.io/pbfcut/manual/reference/python/).
 
 ## Use from Rust
 

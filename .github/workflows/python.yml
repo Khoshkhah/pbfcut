@@ -1,0 +1,84 @@
+name: Python
+
+# The wheels of the Python binding (python/): build them, test them with pytest against the command line, and publish
+# them to PyPI on a version tag (v0.1.0) with trusted publishing (the environment "pypi").
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  wheel:
+    name: wheel ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Python 3.9 on one runner: the lowest version of the abi3 wheel
+          - { name: linux-x86_64, os: ubuntu-latest, python: "3.9" }
+          - { name: linux-aarch64, os: ubuntu-24.04-arm, python: "3.x" }
+          - { name: macos-arm64, os: macos-14, python: "3.x" }
+          - { name: macos-x86_64, os: macos-15-intel, python: "3.x" }
+          - { name: windows-x86_64, os: windows-latest, python: "3.x" }
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: PyO3/maturin-action@v1
+        with:
+          command: build
+          args: --release -m python/Cargo.toml -o dist
+          manylinux: auto
+      - name: The command line (the tests compare with it)
+        run: cargo build --release
+      - name: Install the wheel and run the tests
+        run: |
+          python -m pip install pytest
+          python -m pip install --no-index --find-links dist pbfcut
+          PBFCUT_BIN="$PWD/target/release/pbfcut" python -m pytest -v python/tests
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wheel-${{ matrix.name }}
+          path: dist/*.whl
+
+  sdist:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: PyO3/maturin-action@v1
+        with:
+          command: sdist
+          args: -m python/Cargo.toml -o dist
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sdist
+          path: dist/*.tar.gz
+
+  publish:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [wheel, sdist]
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: The tag equals the version of python/Cargo.toml
+        run: |
+          v=$(sed -n 's/^version = "\(.*\)"/\1/p' python/Cargo.toml | head -1)
+          test "${GITHUB_REF_NAME}" = "v$v" || { echo "tag ${GITHUB_REF_NAME}, version $v"; exit 1; }
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: pypa/gh-action-pypi-publish@release/v1

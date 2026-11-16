@@ -8,6 +8,7 @@ pub mod cells;
 pub mod decode;
 pub mod elements;
 pub mod extract;
+pub mod job;
 pub mod store;
 pub mod tilecut;
 pub mod tiles;
