@@ -35,63 +35,18 @@ Thus the memory does not grow with the number of tiles.
 
 ### The data of the two reads
 
-```mermaid
-flowchart TB
-    IN[("<b>Input .osm.pbf</b><br/>sorted by type, then id")]
+<!-- The diagrams are images: docs/assets/diagrams/*.mmd, drawn by tools/diagrams.py. -->
 
-    subgraph R1["① Read 1: the plan, no element is written"]
-        direction TB
-        P1["<b>1. The node blocks</b><br/>book of the nodes: the tile of each node inside<br/>the tiles with a file · id file of the nodes"]
-        P2["<b>2. The way and relation blocks</b><br/>book of the ways: the tiles of each way<br/>extra rows (node, tile) · id file of the ways · all relations"]
-        P3["<b>3. The relations</b><br/>the members in the file, from the id files<br/>the tiles of each relation · extra rows of the complete relations"]
-        P4["<b>4. The extra nodes</b><br/>the rows sorted by node id"]
-        P1 --> P2 --> P3 --> P4
-    end
-
-    subgraph R2["② Read 2: the write, each element once"]
-        direction TB
-        W1["<b>The nodes</b><br/>to the own tile · to the tiles of the extra rows"]
-        W2["<b>The ways</b><br/>to their tiles · to the tiles of the extra rows"]
-        W3["<b>The relations</b><br/>to their tiles"]
-        W1 --> W2 --> W3
-    end
-
-    OUT[("<b>Tile files</b><br/>one complete .osm.pbf for each tile")]
-    J[("<b>Junctions files</b><br/>one for each tile")]
-
-    IN --> R1
-    R1 --> R2
-    IN -. "read again" .-> R2
-    R2 --> OUT
-    R1 -. "with NodeUses" .-> J
-
-    classDef optional stroke-dasharray: 5 4
-    classDef file stroke:#ffd43b,stroke-width:3px
-    class J optional
-    class IN,OUT,J file
-```
+![The two reads of the cut: read 1 makes the plan in four steps, read 2 writes each element one time](../assets/diagrams/two-reads.png#only-light){ width="348" }
+![The two reads of the cut: read 1 makes the plan in four steps, read 2 writes each element one time](../assets/diagrams/two-reads-dark.png#only-dark){ width="348" }
 
 Read 1 decodes each block of the input one time. Step 3 finds the members of the relations in the id files, so it
 does not read the input again.
 
 ### The threads of read 2
 
-```mermaid
-flowchart TB
-    R["<b>① Read</b><br/>the next blocks<br/>and their extra rows"]
-    D["<b>② Decode and route</b><br/>each element to its tiles,<br/>as compact bytes"]
-    C["<b>③ Collect</b><br/>the elements of each tile<br/>until a block of 8,000 is full"]
-    K["<b>④ Pack</b><br/>the full blocks,<br/>with the next batch"]
-    W["<b>⑤ Write</b><br/>the blocks of each tile<br/>to its file, in input order"]
-    R -- "a batch of blocks" --> D
-    D -- "the bytes of each tile" --> C
-    C -- "the full blocks" --> K
-    K --> W
-    classDef caller fill:#eef2ff
-    classDef pool fill:#fff7e0
-    class R,C,W caller
-    class D,K pool
-```
+![The threads of read 2: read, decode and route, collect, pack, write](../assets/diagrams/threads.png#only-light){ width="323" }
+![The threads of read 2: read, decode and route, collect, pack, write](../assets/diagrams/threads-dark.png#only-dark){ width="323" }
 
 Blue: the calling thread. Yellow: the thread pool. The calling thread reads the next batch while the pool decodes the
 batch before. Only the calling thread opens the

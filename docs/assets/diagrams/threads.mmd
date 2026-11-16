@@ -1,0 +1,14 @@
+flowchart TB
+    R["<b>① Read</b><br/>the next blocks<br/>and their extra rows"]
+    D["<b>② Decode and route</b><br/>each element to its tiles,<br/>as compact bytes"]
+    C["<b>③ Collect</b><br/>the elements of each tile<br/>until a block of 8,000 is full"]
+    K["<b>④ Pack</b><br/>the full blocks,<br/>with the next batch"]
+    W["<b>⑤ Write</b><br/>the blocks of each tile<br/>to its file, in input order"]
+    R -- "a batch of blocks" --> D
+    D -- "the bytes of each tile" --> C
+    C -- "the full blocks" --> K
+    K --> W
+    classDef caller fill:#eef2ff,stroke:#8a6d1f
+    classDef pool fill:#fff7e0,stroke:#8a6d1f
+    class R,C,W caller
+    class D,K pool

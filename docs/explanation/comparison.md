@@ -4,20 +4,35 @@ pbfcut, its [online page](../tutorials/online-page.md) and osmium cut the same f
 
 ## The results
 
-The time of the cut and the peak memory. For pbfcut and osmium, the memory is the peak RSS (`/usr/bin/time -l`). For
-the page, it is the peak WebAssembly memory, with no memory of the browser itself. The footprint of osmium also counts
-the memory that the system moved to the disk.
+Each tool has the same three numbers:
 
-| File | Zoom | Tiles with data | pbfcut | Online page | osmium `extract -c -s smart -S types=multipolygon,boundary` |
+- **Time**: from the start to the end of the cut.
+- **Peak RSS**: the most physical memory in use at one time.
+- **Peak footprint**: the most memory in use at one time, also the memory that macOS compressed or moved to the disk.
+
+For pbfcut and osmium, `/usr/bin/time -l` gives the two memory numbers. For the online page, they are the sum of all
+processes of the browser, sampled every second. osmium is `osmium extract -c -s smart -S types=multipolygon,boundary`.
+
+| File | Zoom | Tool | Time | Peak RSS | Peak footprint |
 |---|---|---|---|---|---|
-| Sweden | 6 | 21 | 12.2 s, 0.86 GiB | 20.1 s, 0.62 GiB | 50.9 s, 9.8 GB ¹ |
-| Sweden | 8 | 183 | 12.8 s, 1.00 GiB | 21.8 s, 0.72 GiB | stopped after 378 s (218 GB peak footprint), no data ¹ |
-| France | 6 | 12 | 56.6 s, 1.11 GiB | 93.8 s, 0.85 GiB | 174 s, 7.2 GiB (35.9 GiB peak footprint) |
-| France | 8 | 116 | 59.4 s, 1.53 GiB | 98.5 s, 1.20 GiB | stopped by us after 600 s, no data |
+| Sweden | 6 | pbfcut | 11.7 s | 0.87 GiB | 0.66 GiB |
+| | | online page | 20.7 s | 1.28 GiB | 0.90 GiB |
+| | | osmium | 53.6 s | 7.95 GiB | 55.4 GiB |
+| Sweden | 8 | pbfcut | 12.7 s | 1.07 GiB | 0.87 GiB |
+| | | online page | 22.2 s | 1.39 GiB | 1.00 GiB |
+| | | osmium | failed after 370 s ¹ | 9.27 GiB | 203 GiB |
+| France | 6 | pbfcut | 61.8 s | 1.05 GiB | 0.82 GiB |
+| | | online page | 96.1 s | 1.42 GiB | 1.05 GiB |
+| | | osmium | 176.4 s | 7.02 GiB | 35.9 GiB |
+| France | 8 | pbfcut | 59.8 s | 1.52 GiB | 1.21 GiB |
+| | | online page | 99.7 s | 1.65 GiB | 1.24 GiB |
+| | | osmium | stopped after 600 s ² | 7.07 GiB | 120 GiB |
 
-¹ Measured on 2026-11-15 with the same osmium and the same Mac. At zoom 8 the configuration had 206 extracts.
+¹ osmium ended with an error, and its files were not complete.
+² We stopped osmium after 600 s. Its memory numbers are sampled every second.
 
-Other programs used the Mac during the runs of the page on France, so these two times can be a little long.
+Measured on 2026-11-16, one run at a time. Sweden has 21 tiles with data at zoom 6 and 183 at zoom 8; France has 12
+and 116.
 
 The files have the same elements, with one difference: osmium gives a node exactly on a tile border to the two tiles
 ([The rules of the cut](rules.md)).
@@ -26,8 +41,8 @@ osmium keeps a set of ids for each extract, so its memory grows with the number 
 node in one compressed list, and writes the large lists to disk. Its memory follows its budget, not the number of
 tiles ([Speed and memory](speed-and-memory.md)).
 
-The command line is about 1.7 times faster than the page. The page runs the same code in WebAssembly, and gives the
-same files.
+The command line is about 1.6 to 1.8 times faster than the page. The page runs the same code in WebAssembly, and gives
+the same files. Its WebAssembly memory alone is smaller than the numbers above: 0.61 to 1.09 GiB.
 
 ## The system
 
