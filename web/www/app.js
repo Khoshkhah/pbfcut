@@ -80,8 +80,8 @@ const HELP = {
     ["Local file", "A .osm.pbf file on this computer. The page does not upload it."],
   ]],
   settings: ["Settings", [
-    ["Tiles", "The square tiles of web maps (OpenStreetMap, Google Maps): at zoom z the map is 2^z × 2^z tiles, and each zoom more cuts a tile into 4. One file for each tile, named z_x_y.osm.pbf."],
-    ["H3 cells", "The hexagons of the H3 grid (made by Uber): at each resolution the world is cut into cells of almost equal area, and each resolution more makes cells 7 times smaller. One file for each cell, named with its H3 index, for example 872b02d27ffffff.osm.pbf."],
+    ["Tiles", "The square tiles of web maps. One file for each tile: z_x_y.osm.pbf."],
+    ["H3 cells", "The hexagons of the H3 grid. One file for each cell, named with its H3 index."],
     ["One area", "No grid: one file with the data inside the boundary."],
     ["Zoom", "The size of a tile, at the equator. At latitude 60° a tile is half as wide and half as high."],
     ["Resolution", "The mean area of an H3 cell."],
