@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 pbfcut is an independent project. Do not mention the other projects of the owner in the code, the tests, the README or the manual.
 
-`docs/design.md` is the source of truth for scope and decisions. Status: the commands `tiles`, `h3` (H3 cells of one resolution), `areas` (a list of areas that can overlap, as `osmium extract -c`) and `compare` exist. A list of H3 cells of mixed resolutions is planned and not in the code. `docs/design.md` is for developers: `mkdocs.yml` keeps it out of the published manual.
+`docs/design.md` is the source of truth for scope and decisions. Status: the commands `tiles`, `h3` (H3 cells of one resolution), `areas` (a list of areas that do not overlap, as `osmium extract -c`) and `compare` exist. A list of H3 cells of mixed resolutions is planned and not in the code. `docs/design.md` is for developers: `mkdocs.yml` keeps it out of the published manual.
 
 ## Commands
 

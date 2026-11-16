@@ -1,7 +1,7 @@
 # Cut a file into your own areas
 
-This tutorial cuts the OpenStreetMap data of Monaco into four areas, with one read of the file. The areas overlap.
-This is the job of `osmium extract -c`, and pbfcut reads the same config file.
+This tutorial cuts the OpenStreetMap data of Monaco into three areas, with one read of the file. This is the job of
+`osmium extract -c`, and pbfcut reads the same config file. The areas must not overlap.
 
 ## Before you start
 
@@ -16,10 +16,10 @@ This is the job of `osmium extract -c`, and pbfcut reads the same config file.
     ```json
     {"type": "FeatureCollection", "features": [
       {"type": "Feature", "properties": {"name": "west"},
-       "geometry": {"type": "Polygon", "coordinates": [[[7.40, 43.72], [7.425, 43.72], [7.425, 43.76], [7.40, 43.76], [7.40, 43.72]]]}},
+       "geometry": {"type": "Polygon", "coordinates": [[[7.40, 43.72], [7.419, 43.72], [7.419, 43.76], [7.40, 43.76], [7.40, 43.72]]]}},
       {"type": "Feature", "properties": {"name": "east"},
        "geometry": {"type": "Polygon", "coordinates": [[[7.42, 43.72], [7.45, 43.72], [7.45, 43.76], [7.42, 43.76], [7.42, 43.72]]]}},
-      {"type": "Feature", "properties": {"name": "harbour"}, "bbox": [7.418, 43.730, 7.428, 43.738], "geometry": null}
+      {"type": "Feature", "properties": {"name": "middle"}, "bbox": [7.419, 43.72, 7.42, 43.76], "geometry": null}
     ]}
     ```
 
@@ -34,11 +34,13 @@ This is the job of `osmium extract -c`, and pbfcut reads the same config file.
 3. Look at the result. The folder `areas/` has one file for each area with a node inside:
 
     ```text
-    east.osm.pbf  harbour.osm.pbf  west.osm.pbf
+    east.osm.pbf  middle.osm.pbf  west.osm.pbf
     ```
 
-    The areas overlap. A node in the two areas `west` and `east` is in the two files. A way with a node in an area is
-    in the file of that area, with all its nodes.
+    A way with a node in an area is in the file of that area, with all its nodes, also the nodes outside the area.
+
+    The area `middle` has a border in common with `west` and with `east`. A node on such a border goes to the first of
+    the two areas in the list: `west` or `east`. If two areas overlap, pbfcut stops with an error that names them and writes no file.
 
 4. To use another property for the names, give `--name`. For example, with a property `code` in each feature:
 

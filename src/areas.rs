@@ -1,5 +1,5 @@
-//! A list of areas for one cut, as the extracts of `osmium extract`: each area gives one output file. The areas can
-//! overlap: a node then goes to each area that holds it (docs/design.md, 3.1).
+//! A list of areas for one cut, as the extracts of `osmium extract`: each area gives one output file. The areas must
+//! not overlap: the cut stops with an error at a node inside two areas (docs/design.md, 3.1).
 //!
 //! [`AreaList::parse`] reads two formats:
 //!

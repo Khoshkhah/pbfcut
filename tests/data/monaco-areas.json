@@ -1,8 +1,7 @@
 {
   "extracts": [
-    {"output": "monaco.osm.pbf", "polygon": {"file_name": "monaco.geojson", "file_type": "geojson"}},
-    {"output": "west.osm.pbf", "bbox": [7.40, 43.72, 7.425, 43.76]},
+    {"output": "west.osm.pbf", "bbox": [7.40, 43.72, 7.419, 43.76]},
     {"output": "east.osm.pbf", "polygon": {"file_name": "monaco-east.poly", "file_type": "poly"}},
-    {"output": "harbour.osm.pbf", "polygon": [[[7.418, 43.730], [7.428, 43.730], [7.428, 43.738], [7.418, 43.738], [7.418, 43.730]]]}
+    {"output": "inner.osm.pbf", "polygon": [[[7.431, 43.736], [7.434, 43.736], [7.434, 43.739], [7.431, 43.739], [7.431, 43.736]]]}
   ]
 }

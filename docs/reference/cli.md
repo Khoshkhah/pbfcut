@@ -60,8 +60,9 @@ computer and in WebAssembly.
 
 ## pbfcut areas
 
-Cuts `IN.osm.pbf` into a list of areas, with one read of the file for all areas, as `osmium extract -c`. The areas can
-overlap: an element goes to each area that holds it.
+Cuts `IN.osm.pbf` into a list of areas, with one read of the file for all areas, as `osmium extract -c`. The areas must
+not overlap. If a node is inside two areas, pbfcut stops with an error that names them. A node on a border between
+two areas goes to the first of the two in the list (see [The rules of the cut](../explanation/rules.md)).
 
 | Option | Value |
 |---|---|
@@ -80,8 +81,7 @@ The output:
 - Standard output gets a JSON object: `areas` (the number of areas in the list), `files` (for each file: `file`,
   `area`, `nodes`, `ways`, `relations`), `seconds`, and with `--steps` also `peak_heap_mib`.
 
-The rules of the cut are the rules of the tiles (see [The rules of the cut](../explanation/rules.md)). One difference:
-a node exactly on the border of an area is inside it, so it can go to more than one area.
+The rules of the cut are the rules of the tiles (see [The rules of the cut](../explanation/rules.md)).
 
 ## pbfcut compare
 

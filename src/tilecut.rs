@@ -278,6 +278,23 @@ mod tests {
         assert!(got.iter().filter(|g| !g.is_empty()).count() > 4);
     }
 
+    /// A point on the edge between two areas goes to the first one, with no error; a point inside two areas is an overlap.
+    #[test]
+    fn a_shared_edge_is_not_an_overlap() {
+        let list = |boxes: &[&str]| {
+            let areas = boxes.iter().enumerate().map(|(i, b)| crate::areas::Area { name: format!("a{i}"), boundary: Boundary::parse(b).unwrap() });
+            AreaList::new(areas.collect(), None).unwrap()
+        };
+        let edge = list(&["0,0,1,1", "1,0,2,1"]);
+        let g = Grid::areas(&edge);
+        assert_eq!((g.of(1.0, 0.5), g.of(0.5, 0.5), g.of(1.5, 0.5)), (Some(0), Some(0), Some(1)));
+        assert!(g.overlap().is_ok());
+        let over = list(&["0,0,1,1", "0.5,0,2,1"]);
+        let g = Grid::areas(&over);
+        assert_eq!(g.of(0.75, 0.5), Some(0));
+        assert!(g.overlap().unwrap_err().contains("\"a0\" and \"a1\""));
+    }
+
     /// The cut of an area list into a sink gives the bytes of the area files of [`cut_to_areas`].
     #[test]
     fn the_areas_into_a_sink_equal_the_area_files() {
@@ -863,20 +880,15 @@ struct Nodes<'a> {
     ids: IdPack,
 }
 
-/// The sets of areas: each set and its number, and the sets in the order of their numbers.
-type Sets = (FxHashMap<Vec<u32>, u32>, Vec<Vec<u32>>);
-
 /// The areas of a cut: map tiles (of one zoom, or of mixed zooms with no tile in another), H3 cells of one resolution,
-/// or a list of areas ([`AreaList`]). The number of an area is its place in the list. Only this type knows the kind of
-/// area: the rest of the cut uses the numbers. A point is in at most one tile or cell. A point can be in more than one
-/// area of a list: then its number in the book of the nodes is a set of areas, from `list.areas.len()` up ([`Grid::each`]
-/// gives the areas of a number).
+/// or a list of areas that do not overlap ([`AreaList`]). A point is in at most one area. The number of an area is its
+/// place in the list. Only this type knows the kind of area: the rest of the cut uses the numbers.
 enum Grid<'a> {
     /// the zooms of the tiles, the finest first
     Tiles { list: &'a [Tile], zooms: Vec<u8>, map: FxHashMap<(u8, u32, u32), u32> },
     Cells { list: &'a [CellIndex], res: Resolution, map: FxHashMap<CellIndex, u32> },
-    /// the sets of areas that read 1 finds; `frozen` after step 1, for the look-ups
-    Areas { list: &'a AreaList, sets: std::sync::RwLock<Sets>, frozen: std::sync::OnceLock<Vec<Vec<u32>>> },
+    /// `overlap`: two areas that read 1 found with a node inside the two (the cut then stops)
+    Areas { list: &'a AreaList, overlap: std::sync::OnceLock<(u32, u32)> },
 }
 
 impl<'a> Grid<'a> {
@@ -896,43 +908,20 @@ impl<'a> Grid<'a> {
     }
 
     fn areas(list: &'a AreaList) -> Grid<'a> {
-        Grid::Areas { list, sets: Default::default(), frozen: Default::default() }
+        Grid::Areas { list, overlap: Default::default() }
     }
 
-    /// After read 1 found all nodes: the sets of areas do not change.
-    fn freeze(&self) {
-        if let Grid::Areas { sets, frozen, .. } = self {
-            let _ = frozen.set(std::mem::take(&mut sets.write().expect("the sets").1));
-        }
-    }
-
-    /// The areas of a number of the book of the nodes, to `out`.
-    fn each(&self, n: u32, out: &mut Vec<u32>) {
+    /// The error of an area list with two areas that overlap.
+    fn overlap(&self) -> Result<(), String> {
         match self {
-            // read 1 (the files of the areas) asks before the sets are frozen
-            Grid::Areas { list, sets, frozen } if n as usize >= list.areas.len() => match frozen.get() {
-                Some(f) => out.extend_from_slice(&f[n as usize - list.areas.len()]),
-                None => out.extend_from_slice(&sets.read().expect("the sets").1[n as usize - list.areas.len()]),
+            Grid::Areas { list, overlap } => match overlap.get() {
+                Some(&(a, b)) => Err(format!(
+                    "the areas \"{}\" and \"{}\" overlap: the areas of a list must not overlap",
+                    list.areas[a as usize].name, list.areas[b as usize].name
+                )),
+                None => Ok(()),
             },
-            _ => out.push(n),
-        }
-    }
-
-    /// Is area `t` in the number `n` of the book of the nodes?
-    fn has(&self, n: u32, t: u32) -> bool {
-        match self {
-            Grid::Areas { list, frozen, .. } if n as usize >= list.areas.len() => {
-                frozen.get().expect("the sets after read 1")[n as usize - list.areas.len()].contains(&t)
-            }
-            _ => n == t,
-        }
-    }
-
-    /// The number of sets of areas (nodes in more than one area).
-    fn sets(&self) -> usize {
-        match self {
-            Grid::Areas { frozen, .. } => frozen.get().map_or(0, Vec::len),
-            _ => 0,
+            _ => Ok(()),
         }
     }
 
@@ -953,9 +942,9 @@ impl<'a> Grid<'a> {
         }
     }
 
-    /// The area that holds the point (its number in the book of the nodes). A tile: `Tile::of` of the finest zoom,
-    /// shifted to the zoom of the tile (the same tile as `Tile::of` of that zoom). An area list: the area, or the set of
-    /// areas.
+    /// The area that holds the point. A tile: `Tile::of` of the finest zoom, shifted to the zoom of the tile (the same
+    /// tile as `Tile::of` of that zoom). An area list: the first area of the list that holds the point. A point on the
+    /// border of two areas is in the two, and goes to the first one; a point inside the two is an overlap.
     fn of(&self, lon: f64, lat: f64) -> Option<u32> {
         match self {
             Grid::Tiles { zooms, map, .. } => {
@@ -963,21 +952,17 @@ impl<'a> Grid<'a> {
                 zooms.iter().find_map(|&z| map.get(&(z, fine.x >> (fine.z - z), fine.y >> (fine.z - z))).copied())
             }
             Grid::Cells { res, map, .. } => map.get(&cell_of(*res, lon, lat)?).copied(),
-            Grid::Areas { list, sets, .. } => {
+            Grid::Areas { list, overlap } => {
                 let mut it = list.of(lon, lat);
                 let first = it.next()?;
-                let Some(second) = it.next() else { return Some(first) };
-                let set: Vec<u32> = [first, second].into_iter().chain(it).collect();
-                if let Some(&n) = sets.read().expect("the sets").0.get(&set) {
-                    return Some(n);
+                // the test of the other areas of the cell is the check of the overlap (no extra time on Sweden, 10 areas)
+                if let Some(second) = it.next() {
+                    let border = |a: u32| list.areas[a as usize].boundary.on_border(lon, lat);
+                    if !border(first) && !border(second) {
+                        let _ = overlap.set((first, second));
+                    }
                 }
-                let mut w = sets.write().expect("the sets");
-                let next = (list.areas.len() + w.1.len()) as u32;
-                let n = *w.0.entry(set.clone()).or_insert(next);
-                if n == next {
-                    w.1.push(set);
-                }
-                Some(n)
+                Some(first)
             }
         }
     }
@@ -1076,7 +1061,6 @@ impl RawSink for Nodes<'_> {
 /// outside the tile, the runs of the ways, and the relations, whole.
 struct Ways<'a> {
     nodes: &'a Book,
-    grid: &'a Grid<'a>,
     /// the nodes in the border of other tiles (sorted (node, tile)): a way with such a node goes to those tiles too
     near: &'a [(i64, u32)],
     runs: BlockRuns,
@@ -1101,9 +1085,7 @@ impl RawSink for Ways<'_> {
         self.ids.push(id);
         let refs: Vec<(i64, Option<u32>)> = refs.map(|n| (n, self.nodes.get(n))).collect();
         self.tiles.clear();
-        for n in refs.iter().filter_map(|r| r.1) {
-            self.grid.each(n, &mut self.tiles);
-        }
+        self.tiles.extend(refs.iter().filter_map(|r| r.1));
         self.tiles.sort_unstable();
         self.tiles.dedup();
         // the home tile of a node outside the area comes from the tiles of the nodes of the ways, not from the borders
@@ -1130,7 +1112,7 @@ impl RawSink for Ways<'_> {
             refs: refs.iter().map(|r| r.0).collect(),
         };
         for &t in &self.tiles {
-            self.outside.extend(refs.iter().filter(|r| !r.1.is_some_and(|n| self.grid.has(n, t))).map(|r| (r.0, t)));
+            self.outside.extend(refs.iter().filter(|r| r.1 != Some(t)).map(|r| (r.0, t)));
         }
         if let Some(u) = self.node_uses {
             u.of_way(&way.tags, &way.refs, &mut self.uses);
@@ -1327,8 +1309,9 @@ pub fn cut_to_cells<R: Read + Seek + Send>(
 }
 
 /// Cut the region file to each area of `areas` inside `boundary`, as [`cut_to_tiles`] does to tiles: the file of an area
-/// goes into `dir` as `NAME.osm.pbf`; an area with no node inside has no file. Areas can overlap: an element goes to
-/// each area that holds it. Gives the numbers of elements of each area.
+/// goes into `dir` as `NAME.osm.pbf`; an area with no node inside has no file. The areas must not overlap: a node inside
+/// two areas stops the cut with an error that names them (a node on the border of two areas goes to the first one).
+/// Gives the numbers of elements of each area.
 pub fn cut_to_areas<R: Read + Seek + Send>(
     open: impl Fn() -> Result<R, String>,
     boundary: &Boundary,
@@ -1574,12 +1557,8 @@ fn cut<R: Read + Seek + Send>(
             Ok((s.runs, s.other, s.span, (s.near, s.own, s.ids.bytes)))
         },
         |(runs, other, span, (mut n, own, ids)), at| {
-            let mut areas = Vec::new();
             for t in own {
-                grid.each(t, &mut areas);
-            }
-            for a in areas {
-                with_file[a as usize] = true;
+                with_file[t as usize] = true;
             }
             if !ids.is_empty() {
                 node_ids.push(&RawBytes, &ids).map_err(io)?;
@@ -1597,14 +1576,8 @@ fn cut<R: Read + Seek + Send>(
     )?;
     nodes.finish();
     tidy(&mut near);
-    grid.freeze();
-    crate::util::step(&format!(
-        "tile cut 1: the nodes inside ({} runs, {} MB; {} nodes in the border of another tile; {} sets of areas that overlap)",
-        nodes.len(),
-        nodes.size() >> 20,
-        near.len(),
-        grid.sets()
-    ));
+    grid.overlap()?;
+    crate::util::step(&format!("tile cut 1: the nodes inside ({} runs, {} MB; {} nodes in the border of another tile)", nodes.len(), nodes.size() >> 20, near.len()));
     // 2. the book of the ways (each way with a node inside); the nodes that a tile needs from outside it (to a
     // temporary list); the relations, whole (to a temporary file)
     let ways_at = ways_at.unwrap_or(0);
@@ -1625,7 +1598,6 @@ fn cut<R: Read + Seek + Send>(
         |b, buf| {
             let mut s = Ways {
                 nodes: &nodes,
-                grid,
                 near: &near,
                 runs: BlockRuns::new(),
                 multi: Vec::new(),
@@ -1736,11 +1708,7 @@ fn cut<R: Read + Seek + Send>(
                         let (mut tiles, mut children) = (Vec::new(), Vec::new());
                         for &(m, t) in members {
                             match t {
-                                MemberType::Node if node_members.binary_search(&m).is_ok() => {
-                                    if let Some(n) = nodes.get(m) {
-                                        grid.each(n, &mut tiles);
-                                    }
-                                }
+                                MemberType::Node if node_members.binary_search(&m).is_ok() => tiles.extend(nodes.get(m)),
                                 MemberType::Way if way_members.binary_search(&m).is_ok() => way_tiles(m, &mut tiles),
                                 MemberType::Relation => children.push(m),
                                 _ => {}
@@ -1922,11 +1890,7 @@ fn cut<R: Read + Seek + Send>(
                 want.dedup();
                 Ok(want)
             },
-            &|id, v: &mut Vec<u32>| {
-                if let Some(n) = nodes.get(id) {
-                    grid.each(n, v);
-                }
-            },
+            &|id, v: &mut Vec<u32>| v.extend(nodes.get(id)),
             with_file,
             &mut writers,
         )?;

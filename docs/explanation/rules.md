@@ -19,13 +19,16 @@ difference. osmium gives a node exactly on a tile border to the two tiles, becau
 
 ## Areas
 
-The cut to a list of areas (`pbfcut areas`) uses the same rules, with "area" in place of "tile". Areas can overlap,
-so a node can go to more than one area. A node exactly on the border of an area is inside it. Then the area files
-have the same elements as the files of `osmium extract -c` with the smart strategy.
+The cut to a list of areas (`pbfcut areas`) uses the same rules, with "area" in place of "tile". The areas must not
+overlap: each node inside goes to one area, as each node goes to one tile.
 
-The cut keeps one number for each node. For a node in one area, the number is the area. For a node in more than one
-area, the number is a set of areas: the cut keeps a table of the sets that it finds. Thus the memory of the cut does
-not grow with the overlap. With `--steps`, the line of step 1 gives the number of sets.
+- A node exactly on the border of an area is inside it.
+- Two areas can have a border in common. A node on that border goes to the first of the two areas in the list.
+- If a node is inside two areas and on the border of neither, the cut stops in its first step with an error that
+  names the two areas. It writes no area file.
+
+When no node is on a border between two areas, the area files have the same elements as the files of
+`osmium extract -c` with the smart strategy. osmium gives a node on a border between two areas to the two areas.
 
 ## How the cut works
 
