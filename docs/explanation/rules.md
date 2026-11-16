@@ -11,6 +11,9 @@ Each tile file of pbfcut is a complete `.osm.pbf` file. These rules give the ele
    from the tile file alone.
 5. A tile with no node inside has no file.
 
+An H3 cell (`pbfcut h3`) has the same rules, with a cell in place of a tile. A node goes to the cell of its point. A
+node exactly on the line between two cells goes to one cell only, as H3 gives it.
+
 These are the rules of osmium's `smart` strategy (`osmium extract -s smart -S types=multipolygon,boundary`), with one
 difference. osmium gives a node exactly on a tile border to the two tiles, because its bounding box includes its edge.
 

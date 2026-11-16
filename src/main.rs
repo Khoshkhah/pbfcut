@@ -1,7 +1,7 @@
 //! The command line of pbfcut (docs/reference/cli.md).
 //!
 //!   pbfcut tiles IN.osm.pbf (--zoom Z | --tiles LIST.txt) [OPTIONS] -o DIR
-//!   pbfcut cells IN.osm.pbf --res R [OPTIONS] -o DIR
+//!   pbfcut h3 IN.osm.pbf --res R [OPTIONS] -o DIR
 //!   pbfcut compare DIR_A DIR_B
 
 use pbfcut::boundary::{Boundary, WORLD};
@@ -17,7 +17,7 @@ use std::time::Instant;
 
 const USAGE: &str = "usage:
   pbfcut tiles IN.osm.pbf (--zoom Z | --tiles LIST.txt) [OPTIONS] -o DIR
-  pbfcut cells IN.osm.pbf --res R [OPTIONS] -o DIR
+  pbfcut h3 IN.osm.pbf --res R [OPTIONS] -o DIR
   pbfcut compare DIR_A DIR_B
 OPTIONS: [--boundary AREA.geojson] [--border METRES] [--complete TYPES] [--memory SIZE] [--temp DIR] [--steps]";
 
@@ -25,7 +25,7 @@ fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let r = match args.first().map(String::as_str) {
         Some("tiles") => cut(&args[1..], false),
-        Some("cells") => cut(&args[1..], true),
+        Some("h3") => cut(&args[1..], true),
         Some("compare") if args.len() == 3 => compare(Path::new(&args[1]), Path::new(&args[2])),
         _ => Err(USAGE.to_string()),
     };
@@ -88,7 +88,7 @@ fn tile_list(text: &str) -> Result<Vec<Tile>, String> {
     Ok(list)
 }
 
-/// `tiles` (`cells` false) or `cells`.
+/// `tiles` (`cells_cut` false) or `h3`.
 fn cut(args: &[String], cells_cut: bool) -> Result<(), String> {
     let input = args.first().filter(|a| !a.starts_with("--")).ok_or(USAGE)?;
     let out = PathBuf::from(opt(args, "-o").ok_or(USAGE)?);

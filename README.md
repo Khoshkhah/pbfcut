@@ -1,7 +1,7 @@
 # pbfcut
 
-pbfcut cuts an OpenStreetMap `.osm.pbf` file into map tiles. It reads the file one time for all tiles, and each tile
-file is a complete `.osm.pbf` file:
+pbfcut cuts an OpenStreetMap `.osm.pbf` file into map tiles or H3 cells. It reads the file one time for all tiles or
+cells, and each output file is a complete `.osm.pbf` file:
 
 - the nodes in the tile;
 - each way with a node in the tile, with all its nodes;
@@ -17,8 +17,7 @@ Sweden (975 MB) on a Mac mini (12 cores, 16 GB):
 
 The same code builds for WebAssembly (`wasm32-unknown-unknown`), so a browser page can cut a file.
 
-Planned: H3 cells of one resolution (`pbfcut h3 IN.osm.pbf --res 7`) or of mixed resolutions, GeoJSON areas that can
-overlap (as the extracts of `osmium extract -c`).
+Planned: a list of H3 cells of mixed resolutions, GeoJSON areas that can overlap (as the extracts of `osmium extract -c`).
 
 ## Install and use
 
@@ -32,6 +31,7 @@ Download the `.osm.pbf` file of an area from Geofabrik (https://download.geofabr
 
 ```bash
 pbfcut tiles sweden-latest.osm.pbf --zoom 8 -o tiles/
+pbfcut h3 sweden-latest.osm.pbf --res 5 -o cells/
 ```
 
 On a computer with little memory, add `--memory 512M`: the cut then uses less memory and more time, and gives the same
@@ -47,6 +47,7 @@ The manual: https://khoshkhah.github.io/pbfcut/manual/ (source in `docs/`). The 
 pbfcut = { git = "https://github.com/Khoshkhah/pbfcut" }
 ```
 
-`pbfcut::tilecut::cut_to_tiles` writes the tile files into a folder. `pbfcut::extract::cut_to_pbf` cuts one area.
+`pbfcut::tilecut::cut_to_tiles` writes the tile files into a folder, and `pbfcut::tilecut::cut_to_cells` the cell
+files (the list of cells from `pbfcut::cells::cells`). `pbfcut::extract::cut_to_pbf` cuts one area.
 
 MIT license.
