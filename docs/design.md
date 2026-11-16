@@ -6,7 +6,9 @@ include it.
 Status (2026-11-16): M1 and M1b are done: the crate, the commands `tiles` and `compare`, the golden tests, CI, the
 manual, and the memory budget. From M2, these are done: `pbfcut h3 --res R` (H3 cells of one resolution), the command
 `areas` (GeoJSON and osmium config lists of areas that do not overlap) and the boundary formats (GeoJSON, `.poly`, WKT,
-`--bbox`). The Python binding is done (section 5.1). The list of cells of mixed resolutions (`--cells`) is not done.
+`--bbox`). The Python binding is done (section 5.1). From M3, the online page cuts to tiles, H3 cells and areas. Not
+done: the list of cells of mixed resolutions (`--cells`), and on the page the map before the cut, the CPU use and the
+`.zip` download.
 
 ## 1. Purpose
 
@@ -142,7 +144,7 @@ costs one more read of the refs, so it waits until a measurement asks for it.
 
 ```text
 pbfcut tiles   IN.osm.pbf (--zoom Z | --tiles LIST.txt) [OPTIONS] -o DIR
-pbfcut h3      IN.osm.pbf (--res R | --cells LIST.txt)  [OPTIONS] -o DIR     (M2)
+pbfcut h3      IN.osm.pbf (--res R | --cells LIST.txt)  [OPTIONS] -o DIR
 pbfcut areas   IN.osm.pbf --areas AREAS.geojson|CONFIG.json [--name PROPERTY] [OPTIONS] [-o DIR]
 pbfcut compare DIR_A DIR_B
 
@@ -157,9 +159,9 @@ FILE: GeoJSON, an osmosis .poly file or WKT, found from the text
   area and one output, as the extracts of `osmium extract -c`. The file name comes from the property `--name`
   (default `name`), else from the `id` of the feature, else from its number. An osmium config file (`extracts`) also
   works: the name from `output`, the area from `bbox`, `polygon` or `multipolygon` (coordinates or a `file_name`).
-  `src/areas.rs` reads the list and has the grid of the boxes; `tilecut::Index` gives the sets of areas to the book.
-  The tile cut keeps the home ways of nodes outside the boundary; the area cut does not, so an area file equals
-  osmium. `--owned` is not done: no use needs it yet.
+  `src/areas.rs` reads the list and has the grid of the boxes; `tilecut::Grid::Areas` gives the first area of a point
+  and checks that no node is inside two areas. The tile cut keeps the home ways of nodes outside the boundary; the
+  area cut does not, so an area file equals osmium.
 - `--memory SIZE`: the memory budget. `--temp DIR`: the folder of the temporary files.
 - Every command writes the numbers of elements of each output to standard output as JSON.
 
@@ -210,7 +212,8 @@ The online page (M3):
    `.zip` file with no compression (the PBF blocks are already compressed).
 
 The CPU use of a step is the busy time of all threads divided by the time of the step and the number of threads. The
-map uses roadstyle's dashboard template and toolbox unchanged. Playwright tests on Monaco run for each kind of area,
+map is MapLibre GL from a CDN, with a free OpenStreetMap base map and the outlines of the tiles, cells or areas: the
+page has no build step for the map and no dependency on another project. Playwright tests on Monaco run for each kind of area,
 on a computer and on a phone viewport (390 x 844), and make sure that the files of the page equal the files of the
 command line.
 
@@ -233,15 +236,16 @@ command line.
 1. **M1, done.** The crate, `tiles` and `compare`, the golden tests, CI, the manual and Pages.
 2. **M1b, done.** The memory budget (section 4), `--memory`, `--temp`, the heap in `--steps`, and the peak-heap guard
    in CI.
-3. **M2, H3 cells and GeoJSON areas.** The function "the areas of a point" for H3 and for GeoJSON, the sets of areas
-   for overlap, the commands `h3` and `areas`, their golden tests, and a measurement against osmium on Sweden with the
-   same areas.
-4. **M3, the online page** of section 6, on GitHub Pages. Done: map tiles (a zoom, a boundary, a border, the threads),
+3. **M2, H3 cells and GeoJSON areas.** Done: the function "the areas of a point" for H3 and for area lists (the areas
+   must not overlap), the commands `h3 --res` and `areas`, the boundary formats, their golden tests, and the
+   measurements. Not done: `h3 --cells` (mixed resolutions).
+4. **M3, the online page** of section 6, on GitHub Pages. Done: map tiles, H3 cells and areas (a boundary in all
+   formats, a border, the threads),
    a region of Geofabrik or a local file, the progress and the steps, "Save all to a folder", the e2e test
    (`web/e2e.py`). Geofabrik sends no CORS headers: the page gives a download link, and Get puts the
    file into OPFS through a relay, in 8 parts at the same time with `Range` (Luxembourg, 48 MB: 11 s, against 30 s with one
    connection; the dated file of `Content-Location`, one ETag, a part that fails starts again at its last byte; the test
-   is `web/get_e2e.py`) (the default is the owner's Cloudflare Worker; `web/serve.py` has one for tests). Not done: H3 cells, GeoJSON areas, the map before
-   the cut, the CPU use, the `.zip` download.
+   is `web/get_e2e.py`) (the default is the owner's Cloudflare Worker; `web/serve.py` has one for tests). Not done: the map before the cut,
+   the CPU use, the `.zip` download.
 
 A step is done only when its part of the manual is done.
