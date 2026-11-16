@@ -22,7 +22,7 @@ jobs:
           # Python 3.9 on one runner: the lowest version of the abi3 wheel
           - { name: linux-x86_64, os: ubuntu-latest, python: "3.9" }
           - { name: linux-aarch64, os: ubuntu-24.04-arm, python: "3.x" }
-          - { name: macos-arm64, os: macos-14, python: "3.x" }
+          - { name: macos-arm64, os: macos-15, python: "3.x" }
           - { name: macos-x86_64, os: macos-15-intel, python: "3.x" }
           - { name: windows-x86_64, os: windows-latest, python: "3.x" }
     defaults:
