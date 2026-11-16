@@ -21,6 +21,7 @@
 //! Read 2 (`write`): the nodes, the ways and the relations, in the order of the file, each to its own tiles and to the
 //! tiles that have it as an extra element.
 
+use crate::areas::AreaList;
 use crate::boundary::Boundary;
 use crate::write::{file_blob_as, nodes_block, relations_block, ways_block, PbfWriter, BLOCK};
 use crate::extract::{each_block, each_block_at, header, widen, CutCounts, Span, EMPTY};
@@ -275,6 +276,32 @@ mod tests {
         }
         std::fs::remove_dir_all(&dir).unwrap();
         assert!(got.iter().filter(|g| !g.is_empty()).count() > 4);
+    }
+
+    /// The cut of an area list into a sink gives the bytes of the area files of [`cut_to_areas`].
+    #[test]
+    fn the_areas_into_a_sink_equal_the_area_files() {
+        let data = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/data");
+        let pbf = data.join("monaco.osm.pbf");
+        let text = std::fs::read_to_string(data.join("monaco-areas.json")).unwrap();
+        let list = AreaList::parse(&text, "name", &|f| std::fs::read_to_string(data.join(f)).map_err(|e| e.to_string())).unwrap();
+        let world = Boundary::parse(crate::boundary::WORLD).unwrap();
+        let open = || std::fs::File::open(&pbf).map_err(|e| e.to_string());
+        let complete = ["multipolygon", "boundary"];
+        let dir = std::env::temp_dir().join(format!("pbfcut-areas-sink-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        cut_to_areas(open, &world, &list, &dir, &complete).unwrap();
+        let mut got = vec![Vec::new(); list.areas.len()];
+        cut_areas_to_sink(open, &world, &list, &complete, &mut |a, bytes| {
+            got[a as usize].extend_from_slice(bytes);
+            Ok(())
+        })
+        .unwrap();
+        for (a, got) in list.areas.iter().zip(&got) {
+            let want = std::fs::read(dir.join(format!("{}.osm.pbf", a.name))).unwrap();
+            assert!(*got == want, "area {}: {} bytes in the sink, {} in the folder", a.name, got.len(), want.len());
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
@@ -836,13 +863,20 @@ struct Nodes<'a> {
     ids: IdPack,
 }
 
-/// The areas of a cut: map tiles (of one zoom, or of mixed zooms with no tile in another) or H3 cells of one
-/// resolution. A point is in at most one area. The number of an area is its place in the list. Only this type knows the
-/// kind of area: the rest of the cut uses the numbers.
+/// The sets of areas: each set and its number, and the sets in the order of their numbers.
+type Sets = (FxHashMap<Vec<u32>, u32>, Vec<Vec<u32>>);
+
+/// The areas of a cut: map tiles (of one zoom, or of mixed zooms with no tile in another), H3 cells of one resolution,
+/// or a list of areas ([`AreaList`]). The number of an area is its place in the list. Only this type knows the kind of
+/// area: the rest of the cut uses the numbers. A point is in at most one tile or cell. A point can be in more than one
+/// area of a list: then its number in the book of the nodes is a set of areas, from `list.areas.len()` up ([`Grid::each`]
+/// gives the areas of a number).
 enum Grid<'a> {
     /// the zooms of the tiles, the finest first
     Tiles { list: &'a [Tile], zooms: Vec<u8>, map: FxHashMap<(u8, u32, u32), u32> },
     Cells { list: &'a [CellIndex], res: Resolution, map: FxHashMap<CellIndex, u32> },
+    /// the sets of areas that read 1 finds; `frozen` after step 1, for the look-ups
+    Areas { list: &'a AreaList, sets: std::sync::RwLock<Sets>, frozen: std::sync::OnceLock<Vec<Vec<u32>>> },
 }
 
 impl<'a> Grid<'a> {
@@ -861,10 +895,52 @@ impl<'a> Grid<'a> {
         Ok(Grid::Cells { list, res, map: list.iter().enumerate().map(|(i, &c)| (c, i as u32)).collect() })
     }
 
+    fn areas(list: &'a AreaList) -> Grid<'a> {
+        Grid::Areas { list, sets: Default::default(), frozen: Default::default() }
+    }
+
+    /// After read 1 found all nodes: the sets of areas do not change.
+    fn freeze(&self) {
+        if let Grid::Areas { sets, frozen, .. } = self {
+            let _ = frozen.set(std::mem::take(&mut sets.write().expect("the sets").1));
+        }
+    }
+
+    /// The areas of a number of the book of the nodes, to `out`.
+    fn each(&self, n: u32, out: &mut Vec<u32>) {
+        match self {
+            // read 1 (the files of the areas) asks before the sets are frozen
+            Grid::Areas { list, sets, frozen } if n as usize >= list.areas.len() => match frozen.get() {
+                Some(f) => out.extend_from_slice(&f[n as usize - list.areas.len()]),
+                None => out.extend_from_slice(&sets.read().expect("the sets").1[n as usize - list.areas.len()]),
+            },
+            _ => out.push(n),
+        }
+    }
+
+    /// Is area `t` in the number `n` of the book of the nodes?
+    fn has(&self, n: u32, t: u32) -> bool {
+        match self {
+            Grid::Areas { list, frozen, .. } if n as usize >= list.areas.len() => {
+                frozen.get().expect("the sets after read 1")[n as usize - list.areas.len()].contains(&t)
+            }
+            _ => n == t,
+        }
+    }
+
+    /// The number of sets of areas (nodes in more than one area).
+    fn sets(&self) -> usize {
+        match self {
+            Grid::Areas { frozen, .. } => frozen.get().map_or(0, Vec::len),
+            _ => 0,
+        }
+    }
+
     fn len(&self) -> usize {
         match self {
             Grid::Tiles { list, .. } => list.len(),
             Grid::Cells { list, .. } => list.len(),
+            Grid::Areas { list, .. } => list.areas.len(),
         }
     }
 
@@ -873,11 +949,13 @@ impl<'a> Grid<'a> {
         match self {
             Grid::Tiles { zooms, .. } => zooms.len() <= 1,
             Grid::Cells { .. } => true,
+            Grid::Areas { .. } => false,
         }
     }
 
-    /// The area that holds the point. A tile: `Tile::of` of the finest zoom, shifted to the zoom of the tile (the same
-    /// tile as `Tile::of` of that zoom).
+    /// The area that holds the point (its number in the book of the nodes). A tile: `Tile::of` of the finest zoom,
+    /// shifted to the zoom of the tile (the same tile as `Tile::of` of that zoom). An area list: the area, or the set of
+    /// areas.
     fn of(&self, lon: f64, lat: f64) -> Option<u32> {
         match self {
             Grid::Tiles { zooms, map, .. } => {
@@ -885,6 +963,22 @@ impl<'a> Grid<'a> {
                 zooms.iter().find_map(|&z| map.get(&(z, fine.x >> (fine.z - z), fine.y >> (fine.z - z))).copied())
             }
             Grid::Cells { res, map, .. } => map.get(&cell_of(*res, lon, lat)?).copied(),
+            Grid::Areas { list, sets, .. } => {
+                let mut it = list.of(lon, lat);
+                let first = it.next()?;
+                let Some(second) = it.next() else { return Some(first) };
+                let set: Vec<u32> = [first, second].into_iter().chain(it).collect();
+                if let Some(&n) = sets.read().expect("the sets").0.get(&set) {
+                    return Some(n);
+                }
+                let mut w = sets.write().expect("the sets");
+                let next = (list.areas.len() + w.1.len()) as u32;
+                let n = *w.0.entry(set.clone()).or_insert(next);
+                if n == next {
+                    w.1.push(set);
+                }
+                Some(n)
+            }
         }
     }
 
@@ -917,6 +1011,8 @@ impl<'a> Grid<'a> {
                     }
                 }
             }
+            // the cut of an area list has no border
+            Grid::Areas { .. } => {}
         }
     }
 
@@ -928,6 +1024,7 @@ impl<'a> Grid<'a> {
                 format!("{}_{}_{}", t.z, t.x, t.y)
             }
             Grid::Cells { list, .. } => list[i as usize].to_string(),
+            Grid::Areas { list, .. } => list.areas[i as usize].name.clone(),
         }
     }
 }
@@ -979,6 +1076,7 @@ impl RawSink for Nodes<'_> {
 /// outside the tile, the runs of the ways, and the relations, whole.
 struct Ways<'a> {
     nodes: &'a Book,
+    grid: &'a Grid<'a>,
     /// the nodes in the border of other tiles (sorted (node, tile)): a way with such a node goes to those tiles too
     near: &'a [(i64, u32)],
     runs: BlockRuns,
@@ -1003,7 +1101,9 @@ impl RawSink for Ways<'_> {
         self.ids.push(id);
         let refs: Vec<(i64, Option<u32>)> = refs.map(|n| (n, self.nodes.get(n))).collect();
         self.tiles.clear();
-        self.tiles.extend(refs.iter().filter_map(|r| r.1));
+        for n in refs.iter().filter_map(|r| r.1) {
+            self.grid.each(n, &mut self.tiles);
+        }
         self.tiles.sort_unstable();
         self.tiles.dedup();
         // the home tile of a node outside the area comes from the tiles of the nodes of the ways, not from the borders
@@ -1030,7 +1130,7 @@ impl RawSink for Ways<'_> {
             refs: refs.iter().map(|r| r.0).collect(),
         };
         for &t in &self.tiles {
-            self.outside.extend(refs.iter().filter(|r| r.1 != Some(t)).map(|r| (r.0, t)));
+            self.outside.extend(refs.iter().filter(|r| !r.1.is_some_and(|n| self.grid.has(n, t))).map(|r| (r.0, t)));
         }
         if let Some(u) = self.node_uses {
             u.of_way(&way.tags, &way.refs, &mut self.uses);
@@ -1226,6 +1326,31 @@ pub fn cut_to_cells<R: Read + Seek + Send>(
     cut_to_dir(open, boundary, &cell_grid(cells, border_m)?, dir, complete, border_m, None)
 }
 
+/// Cut the region file to each area of `areas` inside `boundary`, as [`cut_to_tiles`] does to tiles: the file of an area
+/// goes into `dir` as `NAME.osm.pbf`; an area with no node inside has no file. Areas can overlap: an element goes to
+/// each area that holds it. Gives the numbers of elements of each area.
+pub fn cut_to_areas<R: Read + Seek + Send>(
+    open: impl Fn() -> Result<R, String>,
+    boundary: &Boundary,
+    areas: &AreaList,
+    dir: &Path,
+    complete: &[&str],
+) -> Result<Vec<CutCounts>, String> {
+    cut_to_dir(open, boundary, &Grid::areas(areas), dir, complete, 0.0, None)
+}
+
+/// [`cut_to_areas`], with each area file given to `sink` (in pieces, area by area; the number of an area is its place
+/// in `areas.areas`). The bytes equal the files of [`cut_to_areas`].
+pub fn cut_areas_to_sink<R: Read + Seek + Send>(
+    open: impl Fn() -> Result<R, String>,
+    boundary: &Boundary,
+    areas: &AreaList,
+    complete: &[&str],
+    sink: Sink,
+) -> Result<Vec<CutCounts>, String> {
+    cut_into_sink(open, boundary, &Grid::areas(areas), complete, 0.0, sink)
+}
+
 /// The grid of the cells, with an error for cells of two resolutions or a border of half the edge of a cell or more.
 fn cell_grid(cells: &[CellIndex], border_m: f64) -> Result<Grid<'_>, String> {
     if let Some(c) = cells.first() {
@@ -1247,7 +1372,10 @@ fn cut_to_dir<R: Read + Seek + Send>(
     border_m: f64,
     node_uses: Option<&dyn NodeUses>,
 ) -> Result<Vec<CutCounts>, String> {
-    let tmp = crate::store::temp_dir().join(format!("pbfcut-tiles-{}-{}", std::process::id(), dir.as_os_str().len()));
+    // a number for each cut: two cuts at a time in one process (the tests) must not share the folder
+    static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let tmp = crate::store::temp_dir().join(format!("pbfcut-tiles-{}-{n}", std::process::id()));
     std::fs::create_dir_all(&tmp).map_err(|e| format!("{}: {e}", tmp.display()))?;
     let cut = cut(open, boundary, grid, complete, border_m, Files::Dir(tmp.clone()), Some(dir), None, false, node_uses);
     let _ = std::fs::remove_dir_all(&tmp);
@@ -1446,8 +1574,12 @@ fn cut<R: Read + Seek + Send>(
             Ok((s.runs, s.other, s.span, (s.near, s.own, s.ids.bytes)))
         },
         |(runs, other, span, (mut n, own, ids)), at| {
+            let mut areas = Vec::new();
             for t in own {
-                with_file[t as usize] = true;
+                grid.each(t, &mut areas);
+            }
+            for a in areas {
+                with_file[a as usize] = true;
             }
             if !ids.is_empty() {
                 node_ids.push(&RawBytes, &ids).map_err(io)?;
@@ -1465,7 +1597,14 @@ fn cut<R: Read + Seek + Send>(
     )?;
     nodes.finish();
     tidy(&mut near);
-    crate::util::step(&format!("tile cut 1: the nodes inside ({} runs, {} MB; {} nodes in the border of another tile)", nodes.len(), nodes.size() >> 20, near.len()));
+    grid.freeze();
+    crate::util::step(&format!(
+        "tile cut 1: the nodes inside ({} runs, {} MB; {} nodes in the border of another tile; {} sets of areas that overlap)",
+        nodes.len(),
+        nodes.size() >> 20,
+        near.len(),
+        grid.sets()
+    ));
     // 2. the book of the ways (each way with a node inside); the nodes that a tile needs from outside it (to a
     // temporary list); the relations, whole (to a temporary file)
     let ways_at = ways_at.unwrap_or(0);
@@ -1486,6 +1625,7 @@ fn cut<R: Read + Seek + Send>(
         |b, buf| {
             let mut s = Ways {
                 nodes: &nodes,
+                grid,
                 near: &near,
                 runs: BlockRuns::new(),
                 multi: Vec::new(),
@@ -1531,7 +1671,11 @@ fn cut<R: Read + Seek + Send>(
     ways.finish();
     tidy(&mut multi);
     // the home tile of each node outside the area: no tile holds it, so the first tile (in the order of the tiles) of the ways
-    // at the node gets all these ways, and holds the node (its turns, its rows)
+    // at the node gets all these ways, and holds the node (its turns, its rows). Not in a cut to an area list: an area file
+    // gets only the ways with a node inside it, as in osmium
+    if let Grid::Areas { .. } = grid {
+        homes.clear();
+    }
     homes.sort_unstable();
     let (mut home_ways, mut home_nodes): (Vec<(i64, u32)>, Vec<(i64, u32)>) = (Vec::new(), Vec::new());
     for run in homes.chunk_by(|a, b| a.0 == b.0) {
@@ -1592,7 +1736,11 @@ fn cut<R: Read + Seek + Send>(
                         let (mut tiles, mut children) = (Vec::new(), Vec::new());
                         for &(m, t) in members {
                             match t {
-                                MemberType::Node if node_members.binary_search(&m).is_ok() => tiles.extend(nodes.get(m)),
+                                MemberType::Node if node_members.binary_search(&m).is_ok() => {
+                                    if let Some(n) = nodes.get(m) {
+                                        grid.each(n, &mut tiles);
+                                    }
+                                }
                                 MemberType::Way if way_members.binary_search(&m).is_ok() => way_tiles(m, &mut tiles),
                                 MemberType::Relation => children.push(m),
                                 _ => {}
@@ -1774,7 +1922,11 @@ fn cut<R: Read + Seek + Send>(
                 want.dedup();
                 Ok(want)
             },
-            &|id, v: &mut Vec<u32>| v.extend(nodes.get(id)),
+            &|id, v: &mut Vec<u32>| {
+                if let Some(n) = nodes.get(id) {
+                    grid.each(n, v);
+                }
+            },
             with_file,
             &mut writers,
         )?;

@@ -10,19 +10,15 @@ const STEPS = {
     ["3d", "the members of the multipolygons"], ["4", "the nodes from outside"],
     ["5a", "Read 2: the nodes to the tiles"], ["5d", "Read 2: the ways to the tiles"], ["5e", "Read 2: the relations, and the tile files"],
   ],
-  h3: null,     // the same steps as the tiles (below)
-  area: [
-    ["1", "the nodes inside"], ["2", "the ways and relations"], ["3", "the relations, the member ways"],
-    ["4", "write the nodes"], ["5", "write the ways and relations"],
-  ],
 };
-STEPS.h3 = STEPS.tiles;
+STEPS.h3 = STEPS.areas = STEPS.tiles;     // the same cut, with cells or areas in place of tiles
 const kind = () => document.querySelector("input[name=kind]:checked").value;
 for (const r of document.querySelectorAll("input[name=kind]")) r.addEventListener("change", () => {
   for (const e of document.querySelectorAll("[data-kind]")) e.hidden = !e.dataset.kind.split(" ").includes(kind());
   ready();
 });
 $("boundary").addEventListener("change", ready);
+$("areas").addEventListener("change", ready);
 // The relay: a Cloudflare Worker of the owner that sends Geofabrik's files with CORS headers (Geofabrik sends none).
 // It accepts only files of download.geofabrik.de and only some origins. ?relay=<address> gives another relay
 // (serve.py has one: ?relay=relay).
@@ -82,12 +78,13 @@ const HELP = {
   settings: ["Settings", [
     ["Tiles", "The square tiles of web maps. One file for each tile: z_x_y.osm.pbf."],
     ["H3 cells", "The hexagons of the H3 grid. One file for each cell, named with its H3 index."],
-    ["One area", "No grid: one file with the data inside the boundary."],
+    ["Areas", "No grid: one file for each feature of a GeoJSON FeatureCollection, named by its property \"name\". The areas can overlap. A file with one Polygon gives one area, named after the file."],
     ["Zoom", "The size of a tile, at the equator. At latitude 60° a tile is half as wide and half as high."],
     ["Resolution", "The mean area of an H3 cell."],
     ["Border", "Each file also gets the data this many metres around its tile or cell."],
     ["Threads", "The number of threads of the cut. Default: the number of cores."],
-    ["Boundary", "A GeoJSON Polygon or MultiPolygon. Optional for tiles and cells (default: the bounding box of the file), necessary for one area."],
+    ["Boundary", "Optional: a GeoJSON, .poly (osmosis) or WKT file; the cut keeps only the data inside it. Without it, tiles and cells cover the bounding box of the file."],
+    ["GeoJSON", "In longitude and latitude (WGS 84): a Polygon, a MultiPolygon, a Feature or a FeatureCollection."],
   ]],
   progress: ["Progress", [
     ["Memory", "The WebAssembly memory of the cut."],
@@ -186,8 +183,21 @@ $("threads-hint").textContent = isolated ? "" : "This page is not cross-origin i
 
 function ready() {
   const ok = (source() === "file" ? $("file").files.length > 0 : regionReady)
-    && (kind() !== "area" || $("boundary").files.length > 0);     // one area needs its boundary
+    && (kind() !== "areas" || $("areas").files.length > 0);     // the areas need their file
   $("start").disabled = !ok || !!worker;
+}
+
+// the text of the areas file for the cut: a FeatureCollection or an osmium config as it is; one Feature, Polygon or
+// MultiPolygon becomes a FeatureCollection with one area, named after the file
+async function areasText(file) {
+  const text = await file.text();
+  let v;
+  try { v = JSON.parse(text); } catch { return text; }     // the cut gives the error of the JSON
+  if (v.type === "FeatureCollection" || v.extracts) return text;
+  const name = file.name.replace(/\.(geo)?json$/i, "");
+  const f = v.type === "Feature" ? v : { type: "Feature", properties: {}, geometry: v };
+  f.properties = { name, ...f.properties };
+  return JSON.stringify({ type: "FeatureCollection", features: [f] });
 }
 
 // ---- 3. the cut and its progress
@@ -196,7 +206,7 @@ $("start").addEventListener("click", async () => {
   const boundary = $("boundary").files[0] ? await $("boundary").files[0].text() : null;
   const steps = STEPS[kind()];
   const msg = {
-    kind: kind(), name: ($("boundary").files[0]?.name.replace(/\.(geo)?json$/i, "") || "area") + ".osm.pbf",
+    kind: kind(), areas: kind() === "areas" ? await areasText($("areas").files[0]) : null,
     level: Number($(kind() === "h3" ? "res" : "zoom").value), border: Number($("border").value) || 0, threads: Number($("threads").value) || 1,
     boundary, complete: "multipolygon,boundary",
     ...(source() === "file" ? { file: $("file").files[0] } : { region: fileName(region.id) }),
@@ -288,11 +298,9 @@ async function result({ report, parts, bytes }) {
   files.forEach((f) => { f.size = f.parts.reduce((s, p) => s + p[1], 0); });
   saved = { all, files };
   $("result").hidden = false;
-  $("summary").textContent = kind() === "area"
-    ? `One area file (${mib(bytes)}), in ${report.seconds.toFixed(1)} s.`
-    : kind() === "h3"
-    ? `${files.length} cell files (${mib(bytes)}) of ${report.tiles} cells at resolution ${$("res").value}, in ${report.seconds.toFixed(1)} s.`
-    : `${files.length} tile files (${mib(bytes)}) of ${report.tiles} tiles at zoom ${$("zoom").value}, in ${report.seconds.toFixed(1)} s.`;
+  const n = (k, word) => `${k} ${word}${k === 1 ? "" : "s"}`;
+  const [word, of] = { areas: ["area", ""], h3: ["cell", ` at resolution ${$("res").value}`], tiles: ["tile", ` at zoom ${$("zoom").value}`] }[kind()];
+  $("summary").textContent = `${n(files.length, word + " file")} (${mib(bytes)}) of ${n(report.tiles, word)}${of}, in ${report.seconds.toFixed(1)} s.`;
   const MAX = 1000;
   $("files").replaceChildren(...files.slice(0, MAX).map((f) => {
     const tr = document.createElement("tr");
