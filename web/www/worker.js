@@ -49,9 +49,31 @@ self.pbfcut = {
   step: (name) => postMessage({ type: "step", name, t: performance.now(), memory: memory?.buffer.byteLength }),
 };
 
+// The plan for the map of the page (o.plan): the outlines of the tiles, cells or areas, before the cut. It reads only
+// the header of the file, with the module of one thread. The page keeps one worker for the plans.
+let planModule = null;
+async function plan(o) {
+  if (!planModule) {
+    planModule = await import("./pkg/pbfcut_web.js?v=dev");
+    await planModule.default({ module_or_path: new URL("./pkg/pbfcut_web_bg.wasm?v=dev", import.meta.url) });
+  }
+  let file = o.file;
+  if (o.region) {
+    const regions = await (await navigator.storage.getDirectory()).getDirectoryHandle("regions");
+    file = await (await regions.getFileHandle(o.region)).getFile();
+  }
+  input = { file };
+  return JSON.parse(planModule.plan(file.size, o.kind, o.level, o.boundary, o.areas, o.max));
+}
+
 // o: {file: File} or {region: name of a file in the OPFS folder "regions"}, and zoom, boundary (GeoJSON text or null),
-// border (m), complete (types), threads
+// border (m), complete (types), threads; or o.plan: the plan for the map
 onmessage = async ({ data: o }) => {
+  if (o.plan) {
+    try { postMessage({ type: "plan", id: o.id, plan: await plan(o) }); }
+    catch (e) { postMessage({ type: "plan", id: o.id, error: String(e?.message ?? e) }); }
+    return;
+  }
   try {
     const threads = self.crossOriginIsolated && o.threads > 1;
     const pkg = threads ? "pkg-threads" : "pkg";

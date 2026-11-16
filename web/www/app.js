@@ -18,6 +18,8 @@ for (const r of document.querySelectorAll("input[name=kind]")) r.addEventListene
   ready();
 });
 $("boundary").addEventListener("change", ready);
+$("zoom").addEventListener("change", ready);
+$("res").addEventListener("change", ready);
 $("areas").addEventListener("change", ready);
 // The relay: a Cloudflare Worker of the owner that sends Geofabrik's files with CORS headers (Geofabrik sends none).
 // It accepts only files of download.geofabrik.de and only some origins. ?relay=<address> gives another relay
@@ -50,6 +52,7 @@ $("theme").addEventListener("click", () => {
     ? document.documentElement.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
   document.documentElement.dataset.theme = dark ? "light" : "dark";
   try { localStorage.setItem("theme", document.documentElement.dataset.theme); } catch {}
+  map?.setStyle(style());          // the layers of the plan come again at "style.load"
 });
 
 // ---- the zoom list: each zoom with the size of its tiles (a square) at the equator
@@ -316,6 +319,82 @@ function ready() {
   const ok = (source() === "file" ? $("file").files.length > 0 : regionReady)
     && (kind() !== "areas" || $("areas").files.length > 0);     // the areas need their file
   $("start").disabled = !ok || !!worker;
+  askPlan();
+}
+
+// ---- the map before the cut: the outlines of the tiles, cells or areas that the cut uses (the same lists, from the
+// library, in a worker of its own), on a map of OpenFreeMap. It shows the count, and an error in the boundary or in the
+// areas before the cut.
+const MAX_OUTLINES = 3000;
+let planWorker = null, planId = 0, planTimer = null, map = null, lastPlan = null;
+const style = () => `https://tiles.openfreemap.org/styles/${dark() ? "dark" : "positron"}`;
+const dark = () => document.documentElement.dataset.theme
+  ? document.documentElement.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+function askPlan() {
+  clearTimeout(planTimer);
+  const input = source() === "file" ? $("file").files[0] : regionReady ? region : null;
+  if (!input || (kind() === "areas" && !$("areas").files.length)) { $("plan").hidden = true; return; }
+  planTimer = setTimeout(async () => {
+    const id = ++planId;
+    const msg = {
+      plan: true, id, kind: kind(), level: Number($(kind() === "h3" ? "res" : "zoom").value), max: MAX_OUTLINES,
+      boundary: $("boundary").files[0] ? await $("boundary").files[0].text() : null,
+      areas: kind() === "areas" ? await areasText($("areas").files[0]) : null,
+      ...(source() === "file" ? { file: input } : { region: fileName(input.id) }),
+    };
+    planWorker ??= new Worker("worker.js?v=dev", { type: "module" });
+    planWorker.onmessage = ({ data: m }) => { if (m.type === "plan" && m.id === planId) showPlan(m); };
+    planWorker.postMessage(msg);
+  }, 250);
+}
+function showPlan({ plan, error }) {
+  $("plan").hidden = false;
+  $("plan-text").classList.toggle("bad", !!error);
+  if (error) {
+    $("plan-text").textContent = `This cut cannot start: ${error}`;
+    $("map").hidden = true;
+    return;
+  }
+  const word = { tiles: "tile", h3: "cell", areas: "area" }[kind()];
+  const where = kind() === "areas" ? "" : $("boundary").files[0] ? " that touch the boundary" : " that touch the box of the file";
+  $("plan-text").textContent = `${plan.count.toLocaleString("en")} ${word}${plan.count === 1 ? "" : "s"}${where}.`
+    + (plan.count > MAX_OUTLINES ? ` The map shows ${MAX_OUTLINES.toLocaleString("en")} of them.` : "")
+    + (kind() === "areas" ? "" : ` Only the ${word}s with data get a file.`);
+  $("map").hidden = false;
+  lastPlan = plan;
+  drawPlan();
+}
+async function drawPlan() {
+  if (!window.maplibregl) {
+    const css = Object.assign(document.createElement("link"), { rel: "stylesheet", href: "https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" });
+    document.head.append(css);
+    await new Promise((ok, bad) => document.head.append(Object.assign(document.createElement("script"),
+      { src: "https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js", onload: ok, onerror: bad })));
+  }
+  if (!map) {
+    map = new maplibregl.Map({ container: "map", style: style(), attributionControl: { compact: true }, dragRotate: false });
+    map.touchZoomRotate.disableRotation();
+    map.on("style.load", addLayers);
+    // the attribution stays behind its (i) button: open, it covers a part of a small map
+    map.once("load", () => document.querySelector("#map .maplibregl-ctrl-attrib")?.classList.remove("maplibregl-compact-show"));
+  } else if (map.isStyleLoaded()) addLayers();
+  // the view: the boundary and all outlines that the map shows
+  const b = new maplibregl.LngLatBounds();
+  for (const f of [lastPlan.area, ...lastPlan.outlines.features]) for (const poly of f.geometry.coordinates) for (const p of poly[0]) b.extend(p);
+  if (!b.isEmpty()) map.fitBounds(b, { padding: 24, duration: 0, maxZoom: 15 });
+}
+function addLayers() {
+  if (!lastPlan) return;
+  const accent = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#2563eb";
+  for (const [id, data] of [["outlines", lastPlan.outlines], ["area", lastPlan.area]]) {
+    if (map.getSource(id)) map.getSource(id).setData(data);
+    else map.addSource(id, { type: "geojson", data });
+  }
+  if (!map.getLayer("outlines-fill")) {
+    map.addLayer({ id: "outlines-fill", type: "fill", source: "outlines", paint: { "fill-color": accent, "fill-opacity": 0.08 } });
+    map.addLayer({ id: "outlines-line", type: "line", source: "outlines", paint: { "line-color": accent, "line-width": 1 } });
+    map.addLayer({ id: "area-line", type: "line", source: "area", paint: { "line-color": dark() ? "#fbbf24" : "#d97706", "line-width": 2, "line-dasharray": [2, 1] } });
+  }
 }
 
 // the text of the areas file for the cut: a FeatureCollection or an osmium config as it is; one Feature, Polygon or
