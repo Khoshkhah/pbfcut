@@ -11,8 +11,12 @@ struct Route<'a> {
     own: &'a (dyn Fn(i64, &mut Vec<u32>) + Sync),
     extra: &'a [(i64, u32)],
     with_file: &'a [bool],
+    /// the tiles of this job (`lo..hi`): a block with many extra rows is routed in more jobs, one for each range of tiles
+    range: (u32, u32),
     raw: bool,
     tiles: Vec<u32>,
+    /// the number of tiles of the element in all jobs (the packing of an element does not depend on the jobs)
+    all_tiles: usize,
     out: Vec<(u32, Piece)>,
     all: All,
 }
@@ -36,13 +40,16 @@ impl Route<'_> {
         self.tiles.retain(|&t| self.with_file[t as usize]);
         self.tiles.sort_unstable();
         self.tiles.dedup();
+        self.all_tiles = self.tiles.len();
+        let (lo, hi) = self.range;
+        self.tiles.retain(|&t| lo <= t && t < hi);
         !self.tiles.is_empty()
     }
     /// The element to each of its tiles: a copy for each tile but the last, which gets the element itself (most elements
     /// have one tile: no copy).
     fn take(&mut self) {
         for e in std::mem::take(&mut self.all.0) {
-            if self.tiles.len() > SHARED {
+            if self.all_tiles > SHARED {
                 let mut w = PbfWriter::data(Vec::new()).raw_blocks(self.raw);
                 let (mut n, mut last) = (CutCounts::default(), None);
                 // the writer of a block takes any element: no error is possible here, but keep the element when it fails
@@ -130,9 +137,49 @@ impl<'o> Writers<'o> {
     }
 }
 
+/// The memory of the output of one extra row while it waits for the writers (the row, its piece and its bytes): the
+/// rows in a batch are limited so that the batches in flight fit their share of the memory budget.
+const ROW_BYTES: usize = 512;
+
+/// A block (or a part of a block) to route: the block, all its extra rows (shared by its jobs, so that each element
+/// knows all its tiles), the tiles of this job and the number of its rows in them.
+struct Job {
+    block: std::sync::Arc<Vec<u8>>,
+    rows: std::sync::Arc<Vec<(i64, u32)>>,
+    range: (u32, u32),
+    n: usize,
+}
+
+/// The jobs of a block: one job, or, when the block has more than `most` extra rows, one job for each range of tiles
+/// with at most `most` rows (a tile is never in two jobs, so the elements of each tile keep the order of the file). A
+/// block of nodes on a long boundary can have millions of rows: it goes to every tile with a member of the boundary.
+fn jobs(block: Vec<u8>, rows: Vec<(i64, u32)>, most: usize, out: &mut std::collections::VecDeque<Job>) {
+    let block = std::sync::Arc::new(block);
+    if rows.len() <= most {
+        let n = rows.len();
+        out.push_back(Job { block, rows: std::sync::Arc::new(rows), range: (0, u32::MAX), n });
+        return;
+    }
+    let mut count: std::collections::BTreeMap<u32, usize> = Default::default();
+    for r in &rows {
+        *count.entry(r.1).or_default() += 1;
+    }
+    let rows = std::sync::Arc::new(rows);
+    let (mut lo, mut n) = (0u32, 0usize);
+    for (&t, &c) in &count {
+        if n > 0 && n + c > most {
+            out.push_back(Job { block: block.clone(), rows: rows.clone(), range: (lo, t), n });
+            (lo, n) = (t, 0);
+        }
+        n += c;
+    }
+    out.push_back(Job { block, rows, range: (lo, u32::MAX), n });
+}
+
 /// The blocks at `blocks` (ascending places) to the tiles: this thread reads each block and its extra rows (`extra`,
 /// which gets the span of the block and gives its rows), the pool decodes and routes the blocks, and this thread gives
-/// the elements to the writers, in the order of the file.
+/// the elements to the writers, in the order of the file. A batch has at most one job for each thread, and its extra
+/// rows fit an eighth of the memory budget ([`crate::store::memory`]).
 #[allow(clippy::too_many_arguments)]
 pub(super) fn route_blocks<R: Read + Seek>(
     r: &mut R,
@@ -146,31 +193,39 @@ pub(super) fn route_blocks<R: Read + Seek>(
     let mut kinds = [false; 3];
     kinds[kind] = true;
     let writers_raw = writers.raw;
-    // one block for each thread in a batch (the pipeline holds three batches)
+    // one job for each thread in a batch (the pipeline holds three batches), and at most `most` extra rows in a batch
     let n = rayon::current_num_threads();
+    let most = (crate::store::memory() / 8 / ROW_BYTES).max(1);
+    let per_job = (most / n).max(1);
     let (mut i, mut pos) = (0, None);
+    let mut waiting = std::collections::VecDeque::new();
     crate::extract::pipeline(
         || {
-            let mut batch: Vec<(Vec<u8>, Vec<(i64, u32)>)> = Vec::with_capacity(n);
-            while i < blocks.len() && batch.len() < n {
-                let (at, span) = blocks[i];
-                i += 1;
-                let rows = extra(span)?;
-                if pos != Some(at) {
-                    r.seek(SeekFrom::Start(at)).map_err(|e| e.to_string())?;
+            let (mut batch, mut rows_in): (Vec<Job>, usize) = (Vec::with_capacity(n), 0);
+            while batch.len() < n && rows_in < most {
+                if waiting.is_empty() {
+                    let Some(&(at, span)) = blocks.get(i) else { break };
+                    i += 1;
+                    let rows = extra(span)?;
+                    if pos != Some(at) {
+                        r.seek(SeekFrom::Start(at)).map_err(|e| e.to_string())?;
+                    }
+                    let b = read_block(r)?.ok_or("a block after the end of the file")?;
+                    pos = Some(at + b.len() as u64);
+                    jobs(b, rows, per_job, &mut waiting);
                 }
-                let b = read_block(r)?.ok_or("a block after the end of the file")?;
-                pos = Some(at + b.len() as u64);
-                batch.push((b, rows));
+                let job = waiting.pop_front().expect("a job");
+                rows_in += job.n;
+                batch.push(job);
             }
             Ok((!batch.is_empty()).then_some(batch))
         },
-        |batch: &Vec<(Vec<u8>, Vec<(i64, u32)>)>| {
+        |batch: &Vec<Job>| {
             batch
                 .par_iter()
-                .map_init(Buffers::default, |buf, (b, rows)| {
-                    let mut s = Route { own, extra: rows, with_file, raw: writers_raw, tiles: Vec::new(), out: Vec::new(), all: All::default() };
-                    decode_block(b, kinds, buf, &mut s)?;
+                .map_init(Buffers::default, |buf, job| {
+                    let mut s = Route { own, extra: &job.rows, with_file, range: job.range, raw: writers_raw, tiles: Vec::new(), all_tiles: 0, out: Vec::new(), all: All::default() };
+                    decode_block(&job.block, kinds, buf, &mut s)?;
                     // the elements of each tile packed at once (a stable sort keeps the order of the file in each tile):
                     // no element waits across blocks (a buffer for each tile took 5.4 GB and most of the time on France)
                     s.out.sort_by_key(|x| x.0);

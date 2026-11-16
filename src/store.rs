@@ -64,6 +64,32 @@ impl Seek for TempFile {
     }
 }
 
+/// The memory budget of the cut in bytes (default 2 GiB): each part of the cut takes its share of it.
+static MEMORY: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(2 << 30);
+
+/// Set the memory budget of the cut, in bytes.
+pub fn set_memory(bytes: usize) {
+    MEMORY.store(bytes.max(64 << 10), Ordering::Relaxed);
+}
+
+/// The memory budget of the cut, in bytes.
+pub fn memory() -> usize {
+    MEMORY.load(Ordering::Relaxed)
+}
+
+/// The folder of the temporary files (native); none: the temporary folder of the system.
+static TEMP_DIR: std::sync::Mutex<Option<PathBuf>> = std::sync::Mutex::new(None);
+
+/// Set the folder of the temporary files of [`temp_store`] (native).
+pub fn set_temp_dir(dir: Option<PathBuf>) {
+    *TEMP_DIR.lock().expect("the temporary folder") = dir;
+}
+
+/// The folder of the temporary files: the folder of [`set_temp_dir`], else the temporary folder of the system.
+pub fn temp_dir() -> PathBuf {
+    TEMP_DIR.lock().expect("the temporary folder").clone().unwrap_or_else(std::env::temp_dir)
+}
+
 /// A maker of the store that [`temp_store`] gives on this thread.
 pub type StoreMaker = std::rc::Rc<dyn Fn() -> Box<dyn Store>>;
 
@@ -94,7 +120,7 @@ pub fn temp_store() -> Box<dyn Store> {
     #[cfg(target_arch = "wasm32")]
     return Box::new(MemStore);
     #[cfg(not(target_arch = "wasm32"))]
-    Box::new(DirStore(std::env::temp_dir()))
+    Box::new(DirStore(temp_dir()))
 }
 
 impl Store for DirStore {
@@ -142,8 +168,13 @@ pub struct Writer {
 
 impl Writer {
     pub fn new(store: &dyn Store) -> io::Result<Self> {
+        Self::with_buffer(store, 1 << 20)
+    }
+
+    /// A writer with a write buffer of `bytes` (many writers open at a time: a small buffer each).
+    pub fn with_buffer(store: &dyn Store, bytes: usize) -> io::Result<Self> {
         Ok(Writer {
-            w: BufWriter::with_capacity(1 << 20, store.create()?),
+            w: BufWriter::with_capacity(bytes, store.create()?),
             buf: Vec::new(),
             len: 0,
             bytes: 0,
@@ -221,10 +252,15 @@ impl<R: Read> RawIter<R> {
 }
 
 impl Rows {
-    fn raw(mut self) -> io::Result<RawIter> {
+    fn raw(self) -> io::Result<RawIter> {
+        self.raw_with(1 << 20)
+    }
+
+    /// [`Rows::raw`] with a read buffer of `bytes` (many runs open at a time in a merge).
+    fn raw_with(mut self, bytes: usize) -> io::Result<RawIter> {
         self.blob.seek(SeekFrom::Start(0))?;
         Ok(RawIter {
-            r: BufReader::with_capacity(1 << 20, self.blob),
+            r: BufReader::with_capacity(bytes, self.blob),
             left: self.len,
         })
     }
@@ -297,7 +333,7 @@ pub fn sort_bytes_where<K: Ord + Send>(
     if runs.len() == 1 {
         return Ok(runs.pop().expect("one run"));
     }
-    merge(runs, &key, store)
+    merge(runs, &key, store, budget)
 }
 
 /// [`sort_bytes`] for rows that are read one time: the rows in the order of `key` (stable), merged from the sorted runs
@@ -312,7 +348,7 @@ pub fn sorted<'a, K: Ord + Send + 'a, T: 'a, C: Codec<T>>(
     codec: &'a C,
 ) -> io::Result<impl Iterator<Item = io::Result<T>> + 'a> {
     let runs = sorted_runs(rows, |_| true, &key, budget, store)?;
-    let mut its: Vec<RawIter> = runs.into_iter().map(Rows::raw).collect::<io::Result<_>>()?;
+    let mut its: Vec<RawIter> = runs.into_iter().map(|r| r.raw_with(run_buffer(budget))).collect::<io::Result<_>>()?;
     let mut heads: Vec<Vec<u8>> = vec![Vec::new(); its.len()];
     let mut heap = BinaryHeap::new();
     for (i, it) in its.iter_mut().enumerate() {
@@ -348,7 +384,7 @@ fn sorted_runs<K: Ord + Send>(
     budget: usize,
     store: &dyn Store,
 ) -> io::Result<Vec<Rows>> {
-    let mut raw = rows.raw()?;
+    let mut raw = rows.raw_with(run_buffer(budget))?;
     let mut runs: Vec<Rows> = Vec::new();
     let mut data: Vec<u8> = Vec::new();
     let mut index: Vec<(K, usize, usize)> = Vec::new(); // key, start and end of the row in `data`
@@ -358,7 +394,7 @@ fn sorted_runs<K: Ord + Send>(
             use rayon::slice::ParallelSliceMut;
             index.par_sort_by(|a, b| a.0.cmp(&b.0));
         }
-        let mut w = Writer::new(store)?;
+        let mut w = Writer::with_buffer(store, run_buffer(budget))?;
         for (_, a, b) in index.drain(..) {
             w.push_bytes(&data[a..b])?;
         }
@@ -383,7 +419,7 @@ fn sorted_runs<K: Ord + Send>(
             // open). The runs so far are the first rows of the input, so their merge keeps the sort stable.
             if runs.len() == MERGE_FAN {
                 let all = std::mem::take(&mut runs);
-                runs.push(merge(all, key, store)?);
+                runs.push(merge(all, key, store, budget)?);
             }
         }
     }
@@ -398,9 +434,16 @@ fn sorted_runs<K: Ord + Send>(
 /// The runs that a merge of [`sort_bytes`] reads at once.
 const MERGE_FAN: usize = 64;
 
+/// The read or write buffer of each run of a sort with `budget` bytes: the buffers of a merge (at most [`MERGE_FAN`]
+/// runs) fit the budget, from 16 KiB to 1 MiB each.
+fn run_buffer(budget: usize) -> usize {
+    (budget / (MERGE_FAN + 1)).clamp(16 << 10, 1 << 20)
+}
+
 /// The merge of sorted runs: the smallest (key, run) first; a run is in the order of the input, so the result is stable.
-fn merge<K: Ord>(runs: Vec<Rows>, key: &impl Fn(&[u8]) -> K, store: &dyn Store) -> io::Result<Rows> {
-    let mut its: Vec<RawIter> = runs.into_iter().map(Rows::raw).collect::<io::Result<_>>()?;
+fn merge<K: Ord>(runs: Vec<Rows>, key: &impl Fn(&[u8]) -> K, store: &dyn Store, budget: usize) -> io::Result<Rows> {
+    let buffer = run_buffer(budget);
+    let mut its: Vec<RawIter> = runs.into_iter().map(|r| r.raw_with(buffer)).collect::<io::Result<_>>()?;
     let mut heap = BinaryHeap::new();
     let mut heads: Vec<Vec<u8>> = vec![Vec::new(); its.len()];
     for (i, it) in its.iter_mut().enumerate() {
@@ -408,7 +451,7 @@ fn merge<K: Ord>(runs: Vec<Rows>, key: &impl Fn(&[u8]) -> K, store: &dyn Store) 
             heap.push(Reverse((key(&heads[i]), i)));
         }
     }
-    let mut w = Writer::new(store)?;
+    let mut w = Writer::with_buffer(store, buffer)?;
     while let Some(Reverse((_, i))) = heap.pop() {
         w.push_bytes(&heads[i])?;
         if its[i].next_into(&mut heads[i])? {
@@ -450,6 +493,9 @@ pub fn get_f64(b: &mut &[u8]) -> f64 {
 /// once and read once. Write with [`Buckets::push`]; [`Buckets::finish`] gives the parts in the order of their ranges,
 /// and [`SortedParts`] reads them back, each part sorted.
 
+/// The write buffer of each bucket: a file can have about 100 buckets open at a time (a range of 2^27 node ids each).
+const BUCKET_BUFFER: usize = 64 << 10;
+
 pub struct Buckets {
     shift: u32,
     parts: std::collections::BTreeMap<i64, Writer>,
@@ -463,7 +509,7 @@ impl Buckets {
     pub fn push<T>(&mut self, store: &dyn Store, key: i64, codec: &impl Codec<T>, row: &T) -> io::Result<()> {
         let part = match self.parts.entry(key >> self.shift) {
             std::collections::btree_map::Entry::Occupied(e) => e.into_mut(),
-            std::collections::btree_map::Entry::Vacant(e) => e.insert(Writer::new(store)?),
+            std::collections::btree_map::Entry::Vacant(e) => e.insert(Writer::with_buffer(store, BUCKET_BUFFER)?),
         };
         part.push(codec, row)
     }
@@ -474,7 +520,7 @@ impl Buckets {
         for (bucket, bytes, rows) in encoded {
             let part = match self.parts.entry(bucket) {
                 std::collections::btree_map::Entry::Occupied(e) => e.into_mut(),
-                std::collections::btree_map::Entry::Vacant(e) => e.insert(Writer::new(store)?),
+                std::collections::btree_map::Entry::Vacant(e) => e.insert(Writer::with_buffer(store, BUCKET_BUFFER)?),
             };
             part.push_encoded(&bytes, rows)?;
         }
@@ -511,29 +557,55 @@ pub struct SortedParts<'c, C, F> {
     parts: std::vec::IntoIter<Rows>,
     codec: &'c C,
     key: F,
+    /// the bytes of memory for the rows of a part; a larger part is sorted on disk and read in pieces
+    budget: usize,
+    /// a large part, sorted on disk, while its rows are read
+    sorted: Option<RawIter>,
 }
 
 impl<'c, C, F> SortedParts<'c, C, F> {
+    /// The parts of `parts`, each sorted, with a quarter of [`memory`] for the rows in memory.
     pub fn new(parts: Vec<Rows>, codec: &'c C, key: F) -> Self {
-        SortedParts { parts: parts.into_iter(), codec, key }
+        SortedParts { parts: parts.into_iter(), codec, key, budget: memory() / 4, sorted: None }
     }
 
-    /// The next part, sorted, in `buf` (emptied first); false when there is no more part.
+    /// The next rows in the order of the key, in `buf` (emptied first): a whole part when it fits the budget, else a
+    /// piece of a part sorted on disk. False when there are no more rows.
     pub fn next_into<T: Send, K: Ord + Send>(&mut self, buf: &mut Vec<T>) -> io::Result<bool>
     where
         C: Codec<T>,
         F: Fn(&T) -> K + Sync,
     {
         use rayon::slice::ParallelSliceMut;
+        buf.clear();
+        let most = (self.budget / std::mem::size_of::<T>().max(1)).max(1);
+        if let Some(raw) = self.sorted.as_mut() {
+            let mut bytes = Vec::new();
+            while buf.len() < most && raw.next_into(&mut bytes)? {
+                buf.push(self.codec.get(&mut &bytes[..]));
+            }
+            if !buf.is_empty() {
+                return Ok(true);
+            }
+            self.sorted = None;
+        }
         let Some(rows) = self.parts.next() else {
             return Ok(false);
         };
-        buf.clear();
+        let key = &self.key;
+        if rows.len > most {
+            // the external sort, with the same budget; then this part comes in pieces. The buffer of the part before
+            // goes first, so that the sort and the buffer are not in memory at the same time
+            *buf = Vec::new();
+            let store = temp_store();
+            let sorted = sort(rows, self.codec, key, self.budget, &*store)?;
+            self.sorted = Some(sorted.raw()?);
+            return self.next_into(buf);
+        }
         buf.reserve(rows.len);
         for r in rows.read(self.codec)? {
             buf.push(r?);
         }
-        let key = &self.key;
         buf.par_sort_unstable_by(|a, b| key(a).cmp(&key(b)));
         Ok(true)
     }
@@ -589,5 +661,27 @@ mod tests {
         let mut want = keys();
         want.sort();
         assert_eq!(got, want);
+    }
+
+    /// A part larger than the budget is sorted on disk and comes in pieces, in the same order.
+    #[test]
+    fn a_large_part_comes_sorted_in_pieces() {
+        let store = temp_store();
+        let mut b = Buckets::new(40);
+        for k in keys() {
+            b.push(&*store, k, &I64, &k).unwrap();
+        }
+        let mut parts = SortedParts::new(b.finish().unwrap(), &I64, |r: &i64| *r);
+        parts.budget = 1000 * 8;
+        let (mut buf, mut got, mut pieces) = (Vec::new(), Vec::new(), 0);
+        while parts.next_into(&mut buf).unwrap() {
+            assert!(buf.len() <= 1000);
+            got.extend(buf.iter().copied());
+            pieces += 1;
+        }
+        let mut want = keys();
+        want.sort();
+        assert_eq!(got, want);
+        assert!(pieces >= 5, "{pieces} pieces");
     }
 }
