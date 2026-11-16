@@ -38,7 +38,7 @@ The files are equal to the files of the [command line](../reference/cli.md) with
 ## Notes
 
 - **Get** downloads the file from Geofabrik through a small relay, because Geofabrik does not let other web pages
-  read its files. **Download** saves the file on your computer instead.
+  read its files. **Download** saves the file on your computer instead: in Chrome and Edge it is as fast as **Get**.
 - The first time that you open the page, it loads two times. This lets the cut use all the cores of the computer.
 - **Border (m)** adds the data near each tile or cell to its file. **Threads** sets the number of cores that the cut
   uses.
