@@ -2,10 +2,11 @@
 
 ```text
 pbfcut tiles   IN.osm.pbf (--zoom Z | --tiles LIST.txt) [OPTIONS] -o DIR
+pbfcut h3      IN.osm.pbf --res R [OPTIONS] -o DIR
 pbfcut areas   IN.osm.pbf --areas AREAS.geojson|CONFIG.json [--name PROPERTY] [OPTIONS] [-o DIR]
 pbfcut compare DIR_A DIR_B
 
-OPTIONS: [--boundary FILE | --bbox W,S,E,N] [--complete TYPES] [--memory SIZE] [--temp DIR] [--steps]
+OPTIONS: [--boundary FILE | --bbox W,S,E,N] [--border METRES] [--complete TYPES] [--memory SIZE] [--temp DIR] [--steps]
 ```
 
 The input file must be sorted by type, then by id (`Sort.Type_then_ID`), as the files of Geofabrik.
@@ -20,6 +21,7 @@ Cuts `IN.osm.pbf` into map tiles (Web Mercator, `z/x/y`), with one read of the f
 | `--tiles LIST.txt` | A list of tiles, one `z/x/y` on each line. The zooms can be different. A tile must not be in another tile of the list. |
 | `--boundary FILE` | The cut keeps only the nodes inside this area. The file can be GeoJSON, a polygon file (`.poly`) or WKT (see [Boundary formats](boundaries.md)). Without it: all nodes, and `--zoom` uses the bounding box in the header of the file. |
 | `--bbox W,S,E,N` | A box as the boundary: west, south, east, north, in degrees. You cannot give it together with `--boundary`. |
+| `--border METRES` | A way with a node less than this distance from a tile also goes to that tile. Default: 0. The tiles must have one zoom. |
 | `--complete TYPES` | The types of the relations that each tile gets with all their members, separated by commas. Default: `multipolygon,boundary`. An empty value (`--complete ""`) gives no complete relations. |
 | `--memory SIZE` | The memory budget of the cut, for example `4G` or `512M` (units `K`, `M`, `G`). Default: `2G`. With a smaller budget, the cut writes more temporary data to disk and takes more time. The output files are the same with each budget. |
 | `--temp DIR` | The folder of the temporary files. Default: the temporary folder of the system. The cut of a large file can write temporary files of some times the size of the input file. |
@@ -34,6 +36,27 @@ The output:
   `nodes`, `ways`, `relations`), `seconds`, and with `--steps` also `peak_heap_mib`.
 
 If an error occurs, pbfcut writes it to standard error and stops with the exit code 1.
+
+## pbfcut h3
+
+Cuts `IN.osm.pbf` into the H3 cells of one resolution, with one read of the file for all cells. The cut is the cut of
+`pbfcut tiles`, with a cell in place of a tile: the rules, the options and the output are the same.
+
+| Option | Value |
+|---|---|
+| `--res R` | The cells of resolution `R` (0 to 15) that touch the boundary. Without `--boundary`: the cells that touch the bounding box in the header of the file. |
+| `--border METRES` | A way with a node less than this distance from a cell also goes to that cell. Default: 0. The distance must be less than half the mean edge of a cell (resolution 9: 100 m). |
+
+The other options are the options of `pbfcut tiles`.
+
+The output:
+
+- One file `DIR/<cell index>.osm.pbf` for each cell with a node inside, for example `881eb4cb2dfffff.osm.pbf`. The
+  index is the H3 index of the cell in hexadecimal, as in the H3 library 4.
+- Standard output gets the JSON of `pbfcut tiles`, with `cells` in place of `tiles` and `cell` in place of `tile`.
+
+A node goes to the cell of its point (the function `latLngToCell` of H3). The cell of a point is the same on each
+computer and in WebAssembly.
 
 ## pbfcut areas
 

@@ -4,6 +4,7 @@
 
 pub mod areas;
 pub mod boundary;
+pub mod cells;
 pub mod decode;
 pub mod elements;
 pub mod extract;

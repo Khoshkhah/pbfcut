@@ -16,6 +16,9 @@ miniz_oxide = "0.8"
 rayon = "1.12"
 # the boundary (GeoJSON)
 serde_json = "1"
+# the H3 cells: pure Rust, the cell ids of the H3 library 4; with no `std` feature its math is `libm`, so a point has
+# the same cell on every target
+h3o = { version = "0.11", default-features = false }
 
 [profile.release]
 opt-level = 3

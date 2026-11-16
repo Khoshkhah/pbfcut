@@ -52,6 +52,7 @@ nav:
   - Home: index.md
   - Tutorials:
       - Cut a file into tiles: tutorials/cut-to-tiles.md
+      - Cut a file into H3 cells: tutorials/cut-to-h3-cells.md
       - Cut a file into your own areas: tutorials/cut-to-areas.md
       - Cut a file in your browser: tutorials/online-page.md
   - Reference:
@@ -60,3 +61,4 @@ nav:
   - Explanation:
       - The rules of the cut: explanation/rules.md
       - Speed and memory: explanation/speed-and-memory.md
+      - Comparison: explanation/comparison.md

@@ -472,7 +472,7 @@ pub(super) fn route_blocks<R: Read + Seek>(
 
 /// Where the bytes of each tile file go: the file `z_x_y.osm.pbf` in `dir` (the build by tiles), the part "tile" in the
 /// parts (a folder, or the store), or the sink (the browser).
-pub(super) fn outputs<'o>(tiles: &'o [Tile], dir: Option<&'o Path>, parts: &'o Parts, sink: Option<&'o mut Sink<'_>>) -> Result<Box<dyn FnMut(u32, &[u8], bool) -> Result<(), String> + 'o>, String> {
+pub(super) fn outputs<'o>(grid: &'o Grid<'o>, dir: Option<&'o Path>, parts: &'o Parts, sink: Option<&'o mut Sink<'_>>) -> Result<Box<dyn FnMut(u32, &[u8], bool) -> Result<(), String> + 'o>, String> {
     let e = |p: &Path, e: io::Error| format!("{}: {e}", p.display());
     if let Some(sink) = sink {
         return Ok(Box::new(move |t, b, _| sink(t, b)));
@@ -487,10 +487,7 @@ pub(super) fn outputs<'o>(tiles: &'o [Tile], dir: Option<&'o Path>, parts: &'o P
         o.open(&path).and_then(|mut f| f.write_all(b)).map_err(|x| e(&path, x))
     };
     Ok(match (dir, &parts.files) {
-        (Some(dir), _) => Box::new(move |t, b, first| {
-            let tile = &tiles[t as usize];
-            append(dir.join(format!("{}_{}_{}.osm.pbf", tile.z, tile.x, tile.y)), b, first)
-        }),
+        (Some(dir), _) => Box::new(move |t, b, first| append(dir.join(format!("{}.osm.pbf", grid.file(t))), b, first)),
         (None, Files::Dir(d)) => Box::new(move |t, b, first| append(Parts::path(d, t, "tile"), b, first)),
         (None, Files::Store(c)) => Box::new(move |t, b, _| c.append((t, "tile"), b).map_err(|x| format!("a tile file of the tile cut: {x}"))),
     })

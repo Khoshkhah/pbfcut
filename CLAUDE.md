@@ -8,7 +8,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 pbfcut is an independent project. Do not mention the other projects of the owner in the code, the tests, the README or the manual.
 
-`docs/design.md` is the source of truth for scope and decisions. Status: the commands `tiles`, `areas` (a list of areas that can overlap, as `osmium extract -c`) and `compare` exist. H3 cells are planned and not in the code. `docs/design.md` is for developers: `mkdocs.yml` keeps it out of the published manual.
+`docs/design.md` is the source of truth for scope and decisions. Status: the commands `tiles`, `h3` (H3 cells of one resolution), `areas` (a list of areas that can overlap, as `osmium extract -c`) and `compare` exist. A list of H3 cells of mixed resolutions is planned and not in the code. `docs/design.md` is for developers: `mkdocs.yml` keeps it out of the published manual.
 
 ## Commands
 
@@ -23,6 +23,7 @@ Run the command:
 
 ```bash
 cargo run --release -- tiles tests/data/monaco.osm.pbf --zoom 14 --boundary tests/data/monaco.geojson -o out/
+cargo run --release -- h3 tests/data/monaco.osm.pbf --res 9 --boundary tests/data/monaco.geojson -o out/
 cargo run --release -- areas tests/data/monaco.osm.pbf --areas tests/data/monaco-areas.json -o out/
 cargo run --release -- compare DIR_A DIR_B           # exit 1 if the elements of the .osm.pbf files differ
 ```
@@ -41,7 +42,7 @@ python3 web/e2e.py [--relay]                          # Playwright, desktop and 
 
 ## Golden tests
 
-`tests/golden.rs` compares the output with the hashes of the reference files (`tests/golden/monaco.txt`, from pbfcut 11276bc). The input is `tests/data/monaco.osm.pbf`. The hash covers the blocks after the header block, because the header names the program.
+`tests/golden.rs` compares the output with the hashes of the reference files (`tests/golden/monaco.txt`, from pbfcut 11276bc). `tests/cells.rs` does the same for the H3 cells (`tests/golden/monaco_cells.txt`). The input is `tests/data/monaco.osm.pbf`. The hash covers the blocks after the header block, because the header names the program.
 
 If a golden test fails, a change altered the result. Find the cause. **Never edit the golden file to make a test pass.**
 
@@ -54,8 +55,9 @@ The library (`src/lib.rs`) has one module for each job. The command in `src/main
 - `boundary`: GeoJSON, `.poly`, WKT or a box (`Boundary::parse` finds the format from the text), with point-in-area tests by latitude band. `WORLD` is a boundary that holds every point.
 - `areas`: the list of areas of `pbfcut areas` (GeoJSON FeatureCollection or osmium config), with a grid of their boxes.
 - `tiles`: the Web Mercator tile grid and `tiles(boundary, z)`. Change the tile rule in this one function.
+- `cells`: the H3 cells (`h3o`, no `std` feature, so `libm` math): `cell_of`, `cells(boundary, res)`, `near_cell`.
 - `extract`: the cut of one area (`cut_to_pbf`, `cut_where`) in four passes. The input must be sorted by type, then id (as the files of Geofabrik).
-- `tilecut` (and `tilecut/write.rs`): the cut to many tiles. It is the largest module. It reads the file two times. Read 1 only makes a plan. Read 2 writes each element straight into the files of its tiles. The cut keeps the tile of each node in memory as compressed runs of ids (`Book`). `cut_to_tiles` writes files to a folder, `cut_to_areas` does the same for an area list (`Index` gives the tiles, or the areas and sets of areas, of a point). `cut_to_store` and `cut_to_sink` keep the tile files in a temporary store.
+- `tilecut` (and `tilecut/write.rs`): the cut to many tiles. It is the largest module. It reads the file two times. Read 1 only makes a plan. Read 2 writes each element straight into the files of its tiles. The cut keeps the tile of each node in memory as compressed runs of ids (`Book`). `Grid` is the only part that knows tiles from cells (the area of a point, the border, the file name). `cut_to_tiles`, `cut_to_cells` and `cut_to_areas` write files to a folder. For an area list, the number of a node in the book can be a set of areas (`Grid::Areas`, `Grid::each`). `cut_to_store` and `cut_to_sink` keep the tile files in a temporary store.
 - `store`: rows in temporary files, with an external sort that has a memory budget. The large lists of the cut live here, so they do not stay in memory.
 
 ## Rules that are easy to break

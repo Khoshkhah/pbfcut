@@ -3,15 +3,7 @@
 All numbers are from a Mac mini (12 cores, 16 GB) with the Geofabrik files of Sweden (975 MB) and France (5.1 GB). The
 cut writes all tiles in one read of the file.
 
-## Comparison with osmium
-
-| Sweden | pbfcut | osmium-tool 1.19.1 `extract -c -s smart -S types=multipolygon,boundary` |
-|---|---|---|
-| zoom 6, 21 tiles | 11.2 s, 1.8 GB | 50.9 s, 9.8 GB |
-| zoom 8, 206 tiles | 15.2 s, 1.5 GB | stopped after 378 s (218 GB peak footprint), no data |
-
-osmium keeps a set of ids for each extract, so its memory grows with the number of tiles. pbfcut keeps the tile of each
-node in one compressed list for all tiles.
+For the comparison with osmium and with the online page, see [Comparison](comparison.md).
 
 ## Memory by zoom
 
@@ -31,6 +23,24 @@ memory.
 The time grows with the zoom because the output grows. Each tile file is complete: a way, a multipolygon or a boundary
 goes to every tile that it touches, with all its nodes. At zoom 12, the tile files of Sweden have 495 million nodes from
 outside their tiles.
+
+## Memory by H3 resolution
+
+`pbfcut h3`, with the same budget (`--memory 2G`). The cells are all cells that touch the bounding box of the file, so
+many cells are in the sea and have no file. Other programs used the Mac mini during these runs (load 4 to 18), so the
+times can be a little long.
+
+| File | Resolution | Cells | Files | Time | Peak RSS | Peak heap |
+|---|---|---|---|---|---|---|
+| Monaco (inside its boundary) | 8 | 13 | 10 | 0.05 s | 42 MiB | not measured |
+| Monaco (inside its boundary) | 10 | 222 | 205 | 0.13 s | 114 MiB | not measured |
+| Sweden | 4 | 937 | 657 | 28.6 s | 1,351 MiB | 537 MiB |
+| Sweden | 5 | 6,214 | 3,730 | 38.2 s | 2,024 MiB | 1,251 MiB |
+| Sweden | 6 | 42,659 | 21,618 | 93.8 s | 3,930 MiB | 1,610 MiB |
+| Sweden | 6, `--memory 512M` | 42,659 | 21,618 | 179.6 s | 3,037 MiB | 755 MiB |
+
+The cut of the cells is the cut of the tiles, so the memory follows the budget and not the number of cells. With
+`--memory 512M`, the peak heap of resolution 6 is less than half, and the time is about two times longer.
 
 ## Areas
 
@@ -68,6 +78,7 @@ with `--steps` for the heap.
 cargo build --release
 tools/measure.sh /tmp/measure sweden-latest.osm.pbf:6,8,10,12
 tools/measure.sh /tmp/measure --memory 512M sweden-latest.osm.pbf:12
+tools/measure.sh /tmp/measure sweden-latest.osm.pbf:r4,r5,r6     # H3 cells: rN is the resolution N
 ```
 
 The tile files go to `/tmp/measure/run`, and the script removes them after each run. A cut at a high zoom writes many
