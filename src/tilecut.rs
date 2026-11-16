@@ -1247,7 +1247,10 @@ fn cut_to_dir<R: Read + Seek + Send>(
     border_m: f64,
     node_uses: Option<&dyn NodeUses>,
 ) -> Result<Vec<CutCounts>, String> {
-    let tmp = crate::store::temp_dir().join(format!("pbfcut-tiles-{}-{}", std::process::id(), dir.as_os_str().len()));
+    // a number for each cut: two cuts at the same time in one process (the tests) must not share a folder
+    static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let tmp = crate::store::temp_dir().join(format!("pbfcut-tiles-{}-{n}", std::process::id()));
     std::fs::create_dir_all(&tmp).map_err(|e| format!("{}: {e}", tmp.display()))?;
     let cut = cut(open, boundary, grid, complete, border_m, Files::Dir(tmp.clone()), Some(dir), None, false, node_uses);
     let _ = std::fs::remove_dir_all(&tmp);
