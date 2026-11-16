@@ -81,7 +81,7 @@ def open_page(browser, url, **ctx):
     page.goto(url)
     # the service worker reloads the page one time; then the page is cross-origin isolated
     page.wait_for_function("self.crossOriginIsolated === true", timeout=20000)
-    page.wait_for_function("document.querySelectorAll('#regions option').length > 100")
+    page.wait_for_function("Number(document.documentElement.dataset.regions) > 100")
     return page
 
 
@@ -114,12 +114,44 @@ def main():
             # the map from the start, before any file
             page.wait_for_selector("#map canvas", timeout=60000)
             assert page.text_content("#plan-text").startswith("Choose a region, a file or a boundary"), page.text_content("#plan-text")
+            # the region search: one match is chosen at once; more matches: a list, Enter takes the first, the arrows and
+            # Tab take another; Esc closes the list
+            region_value = lambda: page.input_value("#region")
+            page.fill("#region", "mona")
+            page.wait_for_function("document.querySelector('#region').value === 'Europe / Monaco'")
+            assert page.is_visible("#region-actions") and page.is_hidden("#region-list")
+            page.fill("#region", "georgia")
+            page.wait_for_selector("#region-list:not([hidden])")
+            options = page.locator("#region-list li").all_text_contents()
+            assert len(options) >= 2, options
+            page.press("#region", "Enter")
+            first = region_value()
+            assert first.endswith("Georgia") and page.is_hidden("#region-list"), first
+            page.fill("#region", "georgia")
+            page.press("#region", "ArrowDown")
+            page.press("#region", "Tab")
+            assert region_value().endswith("Georgia") and region_value() != first, region_value()
+            page.fill("#region", "zzqq")
+            assert page.locator("#region-list li").all_text_contents() == ["No region has these words."]
+            page.press("#region", "Escape")
+            assert page.is_hidden("#region-list") and page.is_hidden("#region-actions")
+            print("desktop, the region search:", options, "->", first)
             # a region of Geofabrik, before Get: the map shows the tiles in the outline of the region
             page.fill("#region", "Europe / Monaco")
             page.dispatch_event("#region", "input")
             page.select_option("#zoom", "14")
             page.wait_for_function("/tiles? that touch(es)? the boundary of Monaco/.test(document.querySelector('#plan-text').textContent)", timeout=60000)
             print("desktop, a region before Get:", page.text_content("#plan-text"))
+            # a level above the limit of the area: the page takes the highest one that it can cut, and says so
+            page.click("label[for=kind-h]")
+            page.select_option("#res", "8")       # possible for Monaco
+            page.fill("#region", "Europe / Estonia")
+            page.wait_for_function("/so the page chose/.test(document.querySelector('#plan-text').textContent)", timeout=60000)
+            chosen = page.input_value("#res")
+            assert int(chosen) < 8 and not page.locator("#plan-text").evaluate("e => e.classList.contains('bad')"), page.text_content("#plan-text")
+            print("desktop, a level above the limit:", page.text_content("#plan-text"))
+            page.click("label[for=kind-t]")
+            page.fill("#region", "Europe / Monaco")
             # a boundary only (no file yet): the plan, and the zooms above 20,000 tiles are off
             europe = Path(tmp) / "europe.txt"
             europe.write_text("-10,35,30,70")
@@ -135,7 +167,7 @@ def main():
             def box_tiles(z):
                 (x0, y0), (x1, y1) = tile(z, -10, 70), tile(z, 30, 35)
                 return (x1 - x0 + 1) * (y1 - y0 + 1)
-            want_off = [z for z in range(2, 17) if box_tiles(z) > 20000]
+            want_off = [z for z in range(0, 19) if box_tiles(z) > 20000]
             assert off == want_off, f"the zooms that are off: {off}, want {want_off}"
             print("desktop, a boundary only:", page.text_content("#plan-text"), "zooms off:", off)
             # the theme: the layers of the plan stay, in the colours of the other theme
@@ -263,6 +295,10 @@ def main():
             phone = open_page(browser, url, viewport={"width": 390, "height": 844}, is_mobile=True, has_touch=True,
                               device_scale_factor=3)
             # a region: the buttons Get (through the default relay) and Download
+            phone.fill("#region", "georgia")
+            phone.wait_for_selector("#region-list:not([hidden])")
+            phone.tap("#region-list li:nth-child(2)")
+            assert phone.input_value("#region").endswith("Georgia"), phone.input_value("#region")
             phone.fill("#region", "Europe / Monaco")
             phone.dispatch_event("#region", "input")
             phone.wait_for_function("document.querySelector('#get').title.includes('storage')")
