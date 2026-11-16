@@ -348,18 +348,16 @@ fn tiles_in(pairs: &[(i64, u32)], id: i64) -> impl Iterator<Item = u32> + '_ {
     pairs[i..].iter().take_while(move |p| p.0 == id).map(|p| p.1)
 }
 
-/// The ways of `wanted` (sorted) with their nodes.
-struct Wanted<'a> {
-    wanted: &'a [i64],
+/// The ways of a block with their nodes.
+#[derive(Default)]
+struct WayRefs {
     found: Vec<(i64, Vec<i64>)>,
 }
 
-impl RawSink for Wanted<'_> {
+impl RawSink for WayRefs {
     fn node<'a>(&mut self, _: i64, _: f64, _: f64, _: &mut dyn Iterator<Item = (&'a str, &'a str)>) {}
     fn way<'a>(&mut self, id: i64, _: &mut dyn Iterator<Item = (&'a str, &'a str)>, refs: &mut dyn Iterator<Item = i64>) {
-        if self.wanted.binary_search(&id).is_ok() {
-            self.found.push((id, refs.collect()));
-        }
+        self.found.push((id, refs.collect()));
     }
     fn relation<'a>(
         &mut self,
@@ -1137,7 +1135,7 @@ pub fn cut_to_tiles<R: Read + Seek + Send>(
     border_m: f64,
     node_uses: Option<&dyn NodeUses>,
 ) -> Result<Vec<CutCounts>, String> {
-    let tmp = std::env::temp_dir().join(format!("pbfcut-tiles-{}-{}", std::process::id(), dir.as_os_str().len()));
+    let tmp = crate::store::temp_dir().join(format!("pbfcut-tiles-{}-{}", std::process::id(), dir.as_os_str().len()));
     std::fs::create_dir_all(&tmp).map_err(|e| format!("{}: {e}", tmp.display()))?;
     let cut = cut(open, boundary, tiles, complete, border_m, Files::Dir(tmp.clone()), Some(dir), None, false, node_uses);
     let _ = std::fs::remove_dir_all(&tmp);
@@ -1194,7 +1192,7 @@ pub fn cut_to_store<R: Read + Seek + Send>(
     let files = {
         static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let tmp = std::env::temp_dir().join(format!("pbfcut-tilefiles-{}-{n}", std::process::id()));
+        let tmp = crate::store::temp_dir().join(format!("pbfcut-tilefiles-{}-{n}", std::process::id()));
         std::fs::create_dir_all(&tmp).map_err(|e| format!("{}: {e}", tmp.display()))?;
         Files::Dir(tmp)
     };
@@ -1544,15 +1542,17 @@ fn cut<R: Read + Seek + Send>(
     drop(parents);
     let chosen: Vec<(i64, u32)> = chosen.into_iter().collect();
     crate::util::step(&format!("tile cut 3c: the tiles of the relations ({} pairs)", chosen.len()));
-    // each chosen relation to its tiles; the members of the multipolygons with a member in a tile
-    let mut more: Vec<(i64, u32)> = Vec::new();
+    // each chosen relation to its tiles; the members of the multipolygons with a member in a tile. The member ways in
+    // more tiles (`more`: way, tile) go to a temporary file: a boundary goes to every tile with a member, so these pairs
+    // grow with the number of tiles (Sweden at zoom 12: millions)
+    let mut more = Writer::new(store).map_err(io)?;
     each_rel(&mut |r| {
         if multipolygons.binary_search(&r.id).is_ok() {
             for t in tiles_in(&direct, r.id) {
                 for &(m, ty, _) in &r.members {
                     match ty {
                         MemberType::Node => outside.push(store, m, &Pair, &(m, t as i64)).map_err(io)?,
-                        MemberType::Way => more.push((m, t)),
+                        MemberType::Way => more.push(&Pair, &(m, t as i64)).map_err(io)?,
                         MemberType::Relation => {}
                     }
                 }
@@ -1562,36 +1562,64 @@ fn cut<R: Read + Seek + Send>(
     })?;
     parts.remove(ALL, "relations.all");
     drop((direct, multipolygons));
-    more.extend(home_ways);
-    tidy(&mut more);
-    if !more.is_empty() {
+    for &(w, t) in &home_ways {
+        more.push(&Pair, &(w, t as i64)).map_err(io)?;
+    }
+    drop(home_ways);
+    // sorted as pairs in memory (16 bytes each) when they fit a quarter of the budget, else on disk; then one sorted file
+    // for the three reads below
+    let mut more = {
+        let mut parts = crate::store::SortedParts::new(vec![more.finish().map_err(io)?], &Pair, |p: &(i64, i64)| *p);
+        let (mut w, mut buf) = (Writer::new(store).map_err(io)?, Vec::new());
+        while parts.next_into(&mut buf).map_err(io)? {
+            for p in &buf {
+                w.push(&Pair, p).map_err(io)?;
+            }
+        }
+        w.finish().map_err(io)?
+    };
+    if more.len > 0 {
         // the nodes of these ways: only the blocks with one of them
-        let mut wanted: Vec<i64> = more.iter().map(|m| m.0).collect();
-        wanted.dedup();
-        let at: Vec<u64> = way_blocks
-            .iter()
-            .filter(|(_, (lo, hi))| {
-                let i = wanted.partition_point(|&w| w < *lo);
-                i < wanted.len() && wanted[i] <= *hi
-            })
-            .map(|b| b.0)
-            .collect();
+        let mut at = Vec::new();
+        {
+            let mut rows = more.read_ref(&Pair).map_err(io)?.peekable();
+            for &(place, (lo, hi)) in &way_blocks {
+                while rows.next_if(|x| x.as_ref().is_ok_and(|x| x.0 < lo)).is_some() {}
+                match rows.peek() {
+                    Some(Ok(x)) if x.0 <= hi => at.push(place),
+                    Some(Err(_)) => return Err(io(rows.next().expect("peeked").expect_err("an error"))),
+                    _ => {}
+                }
+            }
+        }
+        let mut rows = more.read_ref(&Pair).map_err(io)?.peekable();
         let mut err = None;
         each_block_at(
             &mut open()?,
             &at,
             |b, buf| {
-                let mut s = Wanted { wanted: &wanted, found: Vec::new() };
+                let mut s = WayRefs::default();
                 decode_block(b, [false, true, false], buf, &mut s)?;
-                // the nodes of these ways for each of their tiles, in the bytes of their buckets (on all threads)
-                let rows = s.found.iter().flat_map(|(w, refs)| {
-                    tiles_in(&more, *w).flat_map(move |t| refs.iter().map(move |&n| (n, (n, t as i64))))
-                });
-                Ok(crate::store::Buckets::encode(BUCKET_SHIFT, &Pair, rows))
+                Ok(s.found)
             },
-            |encoded| {
-                if let Err(e) = outside.push_encoded(store, encoded) {
-                    err.get_or_insert(e);
+            |found| {
+                // the nodes of these ways for each of their tiles, one row at a time, in the order of the ways (the blocks
+                // come in the order of the file, and the pairs are sorted)
+                for (w, refs) in &found {
+                    while rows.next_if(|x| x.as_ref().is_ok_and(|x| x.0 < *w)).is_some() {}
+                    let mut last = None;
+                    while let Some(x) = rows.next_if(|x| x.as_ref().is_ok_and(|x| x.0 == *w)) {
+                        let t = x.map_err(io)?.1;
+                        if last == Some(t) {
+                            continue;
+                        }
+                        last = Some(t);
+                        for &n in refs {
+                            if let Err(e) = outside.push(store, n, &Pair, &(n, t)) {
+                                err.get_or_insert(e);
+                            }
+                        }
+                    }
                 }
                 Ok(())
             },
@@ -1658,6 +1686,8 @@ fn cut<R: Read + Seek + Send>(
             &mut writers,
         )?;
         drop(rows);
+        // the sorted rows and their buffer (the closures of `pairs` and `sorted` borrow them until here)
+        drop(sorted);
         // the lists of read 1 go as soon as read 2 is past them
         drop(nodes);
         crate::util::trim_memory();
@@ -1675,19 +1705,29 @@ fn cut<R: Read + Seek + Send>(
             crate::util::step("tile cut 4d: the junctions files");
         }
         crate::util::trim_memory();
-        let more_ref = &more;
+        let mut more_rows = more.read_ref(&Pair).map_err(io)?.peekable();
         write::route_blocks(
             &mut r,
             &way_blocks,
             1,
             |(lo, hi)| {
-                let i = more_ref.partition_point(|m| m.0 < lo);
-                Ok(more_ref[i..].iter().take_while(|m| m.0 <= hi).copied().collect())
+                while more_rows.next_if(|x| x.as_ref().is_ok_and(|x| x.0 < lo)).is_some() {}
+                let mut want = Vec::new();
+                while let Some(x) = more_rows.next_if(|x| x.as_ref().is_ok_and(|x| x.0 <= hi)) {
+                    let (w, t) = x.map_err(io)?;
+                    want.push((w, t as u32));
+                }
+                if let Some(Err(_)) = more_rows.peek() {
+                    return Err(io(more_rows.next().expect("peeked").expect_err("an error")));
+                }
+                want.dedup();
+                Ok(want)
             },
             &|id, v: &mut Vec<u32>| way_tiles(id, v),
             with_file,
             &mut writers,
         )?;
+        drop(more_rows);
         drop((ways, multi, more));
         crate::util::trim_memory();
         crate::util::step("tile cut 5b: the ways to the tiles");

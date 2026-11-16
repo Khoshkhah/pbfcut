@@ -1,6 +1,6 @@
 //! The command line of pbfcut (docs/reference/cli.md).
 //!
-//!   pbfcut tiles IN.osm.pbf (--zoom Z | --tiles LIST.txt) [--boundary AREA.geojson] [--complete TYPES] [--steps] -o DIR
+//!   pbfcut tiles IN.osm.pbf (--zoom Z | --tiles LIST.txt) [--boundary AREA.geojson] [--complete TYPES] [--memory SIZE] [--temp DIR] [--steps] -o DIR
 //!   pbfcut compare DIR_A DIR_B
 
 use pbfcut::boundary::{Boundary, WORLD};
@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 const USAGE: &str = "usage:
-  pbfcut tiles IN.osm.pbf (--zoom Z | --tiles LIST.txt) [--boundary AREA.geojson] [--complete TYPES] [--steps] -o DIR
+  pbfcut tiles IN.osm.pbf (--zoom Z | --tiles LIST.txt) [--boundary AREA.geojson] [--complete TYPES] [--memory SIZE] [--temp DIR] [--steps] -o DIR
   pbfcut compare DIR_A DIR_B";
 
 fn main() {
@@ -33,6 +33,24 @@ fn main() {
 /// The value of `--name`, if the arguments have it.
 fn opt<'a>(args: &'a [String], name: &str) -> Option<&'a str> {
     args.iter().position(|a| a == name).and_then(|i| args.get(i + 1)).map(String::as_str)
+}
+
+/// A size such as `4G`, `512M`, `64K` or a number of bytes.
+fn size(text: &str) -> Result<usize, String> {
+    let t = text.trim();
+    let (num, unit) = match t.char_indices().find(|c| !c.1.is_ascii_digit() && c.1 != '.') {
+        Some((i, _)) => (&t[..i], t[i..].trim_end_matches(['B', 'b', 'i'])),
+        None => (t, ""),
+    };
+    let n: f64 = num.parse().map_err(|_| format!("not a size: {text} (for example 4G or 512M)"))?;
+    let k = match unit.to_ascii_uppercase().as_str() {
+        "" => 1.0,
+        "K" => 1024.0,
+        "M" => 1048576.0,
+        "G" => 1073741824.0,
+        _ => return Err(format!("not a size: {text} (for example 4G or 512M)")),
+    };
+    Ok((n * k) as usize)
 }
 
 fn read(path: &str) -> Result<String, String> {
@@ -93,7 +111,16 @@ fn cut_tiles(args: &[String]) -> Result<(), String> {
         _ => return Err(format!("give --zoom or --tiles\n{USAGE}")),
     };
     let complete: Vec<&str> = opt(args, "--complete").unwrap_or("multipolygon,boundary").split(',').filter(|t| !t.is_empty()).collect();
-    if args.iter().any(|a| a == "--steps") {
+    if let Some(m) = opt(args, "--memory") {
+        pbfcut::store::set_memory(size(m)?);
+    }
+    if let Some(d) = opt(args, "--temp") {
+        std::fs::create_dir_all(d).map_err(|e| format!("{d}: {e}"))?;
+        pbfcut::store::set_temp_dir(Some(PathBuf::from(d)));
+    }
+    let steps = args.iter().any(|a| a == "--steps");
+    if steps {
+        heap::ON.store(true, std::sync::atomic::Ordering::Relaxed);
         let _ = pbfcut::util::STEP_HOOK.set(step);
     }
     std::fs::create_dir_all(&out).map_err(|e| format!("{}: {e}", out.display()))?;
@@ -112,19 +139,80 @@ fn cut_tiles(args: &[String]) -> Result<(), String> {
             })
         })
         .collect();
-    let report = serde_json::json!({ "tiles": list.len(), "files": files, "seconds": start.elapsed().as_secs_f64() });
+    let mut report = serde_json::json!({ "tiles": list.len(), "files": files, "seconds": start.elapsed().as_secs_f64() });
+    if steps {
+        report["peak_heap_mib"] = serde_json::json!(heap::max() as f64 / 1048576.0);
+    }
     println!("{}", serde_json::to_string_pretty(&report).expect("JSON"));
     Ok(())
 }
 
-/// `--steps`: the name of each step and its time, to standard error.
+/// `--steps`: the name of each step, its time, and the heap now and at its peak in the step, to standard error.
 fn step(name: &str) {
     static LAST: std::sync::Mutex<Option<Instant>> = std::sync::Mutex::new(None);
     let mut last = LAST.lock().expect("the time");
     let now = Instant::now();
     let secs = last.map_or(0.0, |t| (now - t).as_secs_f64());
     *last = Some(now);
-    eprintln!("{secs:>8.3} s  {name}");
+    let (live, peak) = heap::take_peak();
+    let mib = |b: usize| b as f64 / 1048576.0;
+    eprintln!("{secs:>8.3} s  heap {:>8.1} MiB, peak {:>8.1} MiB  {name}", mib(live), mib(peak));
+}
+
+/// The heap of the process: the bytes in use now and the most since the last step. It counts only after `--steps`.
+mod heap {
+    use std::alloc::{GlobalAlloc, Layout, System};
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering::Relaxed};
+
+    struct Counting;
+    static LIVE: AtomicUsize = AtomicUsize::new(0);
+    static PEAK: AtomicUsize = AtomicUsize::new(0);
+    pub static ON: AtomicBool = AtomicBool::new(false);
+
+    // SAFETY: each call goes to the system allocator with the same arguments; the counters only add and subtract
+    unsafe impl GlobalAlloc for Counting {
+        unsafe fn alloc(&self, l: Layout) -> *mut u8 {
+            let p = unsafe { System.alloc(l) };
+            if !p.is_null() && ON.load(Relaxed) {
+                PEAK.fetch_max(LIVE.fetch_add(l.size(), Relaxed) + l.size(), Relaxed);
+            }
+            p
+        }
+        unsafe fn dealloc(&self, p: *mut u8, l: Layout) {
+            unsafe { System.dealloc(p, l) };
+            if ON.load(Relaxed) {
+                LIVE.fetch_sub(l.size(), Relaxed);
+            }
+        }
+        unsafe fn realloc(&self, p: *mut u8, l: Layout, new: usize) -> *mut u8 {
+            let q = unsafe { System.realloc(p, l, new) };
+            if !q.is_null() && ON.load(Relaxed) {
+                if new >= l.size() {
+                    PEAK.fetch_max(LIVE.fetch_add(new - l.size(), Relaxed) + new - l.size(), Relaxed);
+                } else {
+                    LIVE.fetch_sub(l.size() - new, Relaxed);
+                }
+            }
+            q
+        }
+    }
+
+    #[global_allocator]
+    static A: Counting = Counting;
+
+    /// (live, peak since the last call); the peak starts again at the live bytes.
+    pub fn take_peak() -> (usize, usize) {
+        let live = LIVE.load(Relaxed);
+        let peak = PEAK.swap(live, Relaxed);
+        MAX.fetch_max(peak, Relaxed);
+        (live, peak)
+    }
+
+    /// The most bytes in use since the start of the count.
+    pub fn max() -> usize {
+        MAX.load(Relaxed).max(PEAK.load(Relaxed))
+    }
+    static MAX: AtomicUsize = AtomicUsize::new(0);
 }
 
 /// All elements of a file, in its order.
@@ -195,4 +283,23 @@ fn compare(a: &Path, b: &Path) -> Result<(), String> {
         return Err(format!("{bad} files differ"));
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn sizes() {
+        assert_eq!(super::size("4G"), Ok(4 << 30));
+        assert_eq!(super::size("512M"), Ok(512 << 20));
+        assert_eq!(super::size("1.5GiB"), Ok(3 << 29));
+        assert_eq!(super::size("1000"), Ok(1000));
+        assert!(super::size("4T").is_err() && super::size("lots").is_err());
+    }
+
+    #[test]
+    fn tile_lists() {
+        assert_eq!(super::tile_list("14/8529/5974\n15/17060/11949\n").unwrap().len(), 2);
+        assert!(super::tile_list("14/8529/5974\n15/17058/11948\n").is_err(), "a tile in another tile");
+        assert!(super::tile_list("1/2/0").is_err(), "x out of the zoom");
+    }
 }
