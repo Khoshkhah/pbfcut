@@ -32,10 +32,31 @@ def free_port():
         return s.getsockname()[1]
 
 
-def cli_files(out):
-    subprocess.run([ROOT / "target/release/pbfcut", "tiles", PBF, "--zoom", "14", "--boundary", AREA, "-o", out],
+def cli_files(out, *args):
+    subprocess.run([ROOT / "target/release/pbfcut", *(args or ("tiles", PBF, "--zoom", "14")), "--boundary", AREA, "-o", out],
                    check=True, stdout=subprocess.DEVNULL)
     return {p.name: p.read_bytes() for p in Path(out).glob("*.osm.pbf")}
+
+
+def save_all(page):
+    """ "Save all to a folder", with the folder picker of the page given an OPFS folder; gives {name: bytes}."""
+    page.evaluate("""self.showDirectoryPicker = async () => {
+        const root = await navigator.storage.getDirectory();
+        await root.removeEntry('saved', { recursive: true }).catch(() => {});
+        return root.getDirectoryHandle('saved', { create: true });
+    }""")
+    page.click("#save")
+    page.wait_for_function("document.querySelector('#save-text').textContent.includes('saved in the folder')")
+    got = page.evaluate("""async () => {
+        const dir = await (await navigator.storage.getDirectory()).getDirectoryHandle('saved'), out = {};
+        for await (const [name, h] of dir.entries()) {
+            const b = new Uint8Array(await (await h.getFile()).arrayBuffer());
+            let s = ''; for (let i = 0; i < b.length; i += 32768) s += String.fromCharCode(...b.subarray(i, i + 32768));
+            out[name] = btoa(s);
+        }
+        return out;
+    }""")
+    return {k: base64.b64decode(v) for k, v in got.items()}
 
 
 def open_page(browser, url, **ctx):
@@ -49,7 +70,7 @@ def open_page(browser, url, **ctx):
 
 
 def cut(page, threads=None):
-    page.fill("#zoom", "14")
+    page.select_option("#zoom", "14")
     if threads:
         page.fill("#threads", str(threads))
     page.click("#start")
@@ -79,20 +100,7 @@ def main():
             page.set_input_files("#boundary", str(AREA))
             print("desktop:", cut(page, threads=4))
             assert page.text_content("#threads-hint") == ""
-            page.evaluate("""self.showDirectoryPicker = async () =>
-                (await navigator.storage.getDirectory()).getDirectoryHandle('saved', { create: true })""")
-            page.click("#save")
-            page.wait_for_function("document.querySelector('#save-text').textContent.includes('saved in the folder')")
-            got = page.evaluate("""async () => {
-                const dir = await (await navigator.storage.getDirectory()).getDirectoryHandle('saved'), out = {};
-                for await (const [name, h] of dir.entries()) {
-                    const b = new Uint8Array(await (await h.getFile()).arrayBuffer());
-                    let s = ''; for (let i = 0; i < b.length; i += 32768) s += String.fromCharCode(...b.subarray(i, i + 32768));
-                    out[name] = btoa(s);
-                }
-                return out;
-            }""")
-            got = {k: base64.b64decode(v) for k, v in got.items()}
+            got = save_all(page)
             assert sorted(got) == sorted(want), f"files: page {sorted(got)}, command line {sorted(want)}"
             for name in want:
                 assert got[name] == want[name], f"{name}: the page and the command line differ"
@@ -111,6 +119,38 @@ def main():
             if shots:
                 page.screenshot(path=shots / "desktop.png", full_page=True)
 
+            # one area: one file inside the boundary
+            page.click("label[for=src-f]")
+            page.set_input_files("#file", str(PBF))
+            page.click("label[for=kind-a]")
+            assert page.is_disabled("#start"), "one area needs a boundary"
+            page.set_input_files("#boundary", str(AREA))
+            page.click("#start")
+            page.wait_for_selector("#result:not([hidden]), #error:not([hidden])", timeout=120000)
+            assert not page.locator("#error").is_visible(), page.text_content("#error")
+            assert page.locator("#steps li.done").count() == 5
+            assert page.text_content("#files tr:first-child td:first-child") == "monaco.osm.pbf"
+            assert int(page.text_content("#files tr:first-child td:nth-child(2)")) > 30000
+            print("desktop, one area:", page.text_content("#summary"))
+
+            # H3 cells: the files equal the files of `pbfcut h3`
+            want_h3 = cli_files(Path(tmp) / "h3", "h3", PBF, "--res", "9")
+            page.click("label[for=kind-h]")
+            page.select_option("#res", "9")
+            page.click("#start")
+            page.wait_for_selector("#result:not([hidden]), #error:not([hidden])", timeout=120000)
+            assert not page.locator("#error").is_visible(), page.text_content("#error")
+            got = save_all(page)
+            assert sorted(got) == sorted(want_h3), f"cells: page {sorted(got)}, command line {sorted(want_h3)}"
+            assert all(got[n] == want_h3[n] for n in want_h3), "a cell file of the page differs"
+            print(f"desktop, H3: {len(got)} files equal the files of the command line;", page.text_content("#summary"))
+
+            # the help popups: each "?" opens its text
+            for b in page.locator("button.help").all():
+                if b.is_visible():
+                    b.click()
+                    assert page.locator("#help-box").is_visible() and page.text_content("#help-title")
+                    page.click("#help-box button")
             # the phone: the cut, one file downloaded, no horizontal scroll
             phone = open_page(browser, url, viewport={"width": 390, "height": 844}, is_mobile=True, has_touch=True,
                               device_scale_factor=3)

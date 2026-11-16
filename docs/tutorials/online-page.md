@@ -19,15 +19,21 @@ folder. On a phone, the page downloads one file at a time.
         Geofabrik does not let other web pages read its files (it sends no CORS headers). Thus **Get** gets the file
         through a relay: a small Cloudflare Worker that accepts only files of download.geofabrik.de.
     - **A file on this computer**: select the `.osm.pbf` file.
-3. Set the settings:
-    - **Zoom**: the zoom of the tiles (default 8).
+3. Select the kind of cut:
+    - **Tiles**: the square tiles of web maps. At zoom z, the map has 2^z × 2^z tiles. One file for each tile, for
+      example `8_136_74.osm.pbf`.
+    - **H3 cells**: the hexagons of the H3 grid. Each resolution more makes the cells 7 times smaller. One file for
+      each cell, with the H3 index as its name, for example `872b02d27ffffff.osm.pbf`.
+    - **One area**: one file with the data inside the boundary. A boundary is necessary.
+4. Set the settings:
+    - **Zoom** (tiles) or **Resolution** (H3 cells): the size of the tiles or cells. The list shows the size of each.
     - **Border (m)**: each tile file also gets the data in this border around the tile (default 0).
     - **Threads**: the number of threads of the cut. The default is the number of cores of the computer.
     - **Boundary** (optional): a GeoJSON file with a Polygon or a MultiPolygon. With no boundary, the tiles cover the
       bounding box in the header of the file.
-4. Click **Cut**. The page shows the time, the step, the WebAssembly memory and the storage of the site. Each step
+5. Click **Cut**. The page shows the time, the step, the WebAssembly memory and the storage of the site. Each step
    of the cut gets a check mark and its time. **Stop** stops the cut.
-5. Click **Save all to a folder**, and select a folder. The page writes one file for each tile, for example
+6. Click **Save all to a folder**, and select a folder. The page writes one file for each tile, for example
    `8_136_74.osm.pbf`. To get one file, click its name in the table.
 
 The tile files are equal to the files of `pbfcut tiles` with the same zoom and boundary (see

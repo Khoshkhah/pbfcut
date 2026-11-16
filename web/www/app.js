@@ -2,12 +2,27 @@
 // the tile files. The tile files stay in one OPFS file ("cut/tiles"); `parts` says where each file is in it.
 
 const $ = (id) => document.getElementById(id);
-const STEPS = [
-  ["1", "Read 1: the nodes inside"], ["2", "Read 1: the ways"],
-  ["3a", "the members of the relations"], ["3b", "the members in the file"], ["3c", "the tiles of the relations"],
-  ["3d", "the members of the multipolygons"], ["4", "the nodes from outside"],
-  ["5a", "Read 2: the nodes to the tiles"], ["5d", "Read 2: the ways to the tiles"], ["5e", "Read 2: the relations, and the tile files"],
-];
+// the steps of each kind of cut, in their order: the library names each step at its end
+const STEPS = {
+  tiles: [
+    ["1", "Read 1: the nodes inside"], ["2", "Read 1: the ways"],
+    ["3a", "the members of the relations"], ["3b", "the members in the file"], ["3c", "the tiles of the relations"],
+    ["3d", "the members of the multipolygons"], ["4", "the nodes from outside"],
+    ["5a", "Read 2: the nodes to the tiles"], ["5d", "Read 2: the ways to the tiles"], ["5e", "Read 2: the relations, and the tile files"],
+  ],
+  h3: null,     // the same steps as the tiles (below)
+  area: [
+    ["1", "the nodes inside"], ["2", "the ways and relations"], ["3", "the relations, the member ways"],
+    ["4", "write the nodes"], ["5", "write the ways and relations"],
+  ],
+};
+STEPS.h3 = STEPS.tiles;
+const kind = () => document.querySelector("input[name=kind]:checked").value;
+for (const r of document.querySelectorAll("input[name=kind]")) r.addEventListener("change", () => {
+  for (const e of document.querySelectorAll("[data-kind]")) e.hidden = !e.dataset.kind.split(" ").includes(kind());
+  ready();
+});
+$("boundary").addEventListener("change", ready);
 // The relay: a Cloudflare Worker of the owner that sends Geofabrik's files with CORS headers (Geofabrik sends none).
 // It accepts only files of download.geofabrik.de and only some origins. ?relay=<address> gives another relay
 // (serve.py has one: ?relay=relay).
@@ -39,6 +54,61 @@ $("theme").addEventListener("click", () => {
     ? document.documentElement.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
   document.documentElement.dataset.theme = dark ? "light" : "dark";
   try { localStorage.setItem("theme", document.documentElement.dataset.theme); } catch {}
+});
+
+// ---- the zoom list: each zoom with the size of its tiles (a square) at the equator
+for (let z = 2; z <= 16; z++) {
+  const km = 40075 / 2 ** z, w = km >= 10 ? Math.round(km) : km.toFixed(1);
+  // a figure space before a zoom of one digit, and two em spaces after it: the numbers line up (option text has no CSS)
+  $("zoom").append(new Option(`${String(z).padStart(2, "\u2007")}\u2003\u2003${w} × ${w} km`, z, false, z === 8));
+}
+
+// ---- the H3 resolutions: each with the mean area of its cells (hexagons), as in the H3 library
+const H3_KM2 = [4357449, 609788, 86802, 12393, 1770, 252.9, 36.13, 5.161, 0.7373, 0.1053, 0.01505, 0.00215, 0.000307];
+for (let r = 2; r <= 12; r++) {
+  const a = H3_KM2[r], area = a >= 100 ? Math.round(a).toLocaleString("en") : a >= 1 ? a.toFixed(1) : a.toPrecision(2);
+  $("res").append(new Option(`${String(r).padStart(2, "\u2007")}\u2003\u2003${area} km²`, r, false, r === 7));
+}
+
+// ---- the help popups (the buttons "?")
+// each popup: a title and its items [term, text]
+const HELP = {
+  input: ["Input", [
+    ["Geofabrik region", "Geofabrik (download.geofabrik.de) is a website that gives free OpenStreetMap files of the countries and regions of the world. Search a region, then click Get or Download."],
+    ["Get", "Puts the file into the storage of this site, through a relay (Geofabrik does not let web pages read its files)."],
+    ["Download", "Saves the file on your computer. Then select it as a local file."],
+    ["Local file", "A .osm.pbf file on this computer. The page does not upload it."],
+  ]],
+  settings: ["Settings", [
+    ["Tiles", "The square tiles of web maps. One file for each tile: z_x_y.osm.pbf."],
+    ["H3 cells", "The hexagons of the H3 grid. One file for each cell, named with its H3 index."],
+    ["One area", "No grid: one file with the data inside the boundary."],
+    ["Zoom", "The size of a tile, at the equator. At latitude 60° a tile is half as wide and half as high."],
+    ["Resolution", "The mean area of an H3 cell."],
+    ["Border", "Each file also gets the data this many metres around its tile or cell."],
+    ["Threads", "The number of threads of the cut. Default: the number of cores."],
+    ["Boundary", "A GeoJSON Polygon or MultiPolygon. Optional for tiles and cells (default: the bounding box of the file), necessary for one area."],
+  ]],
+  progress: ["Progress", [
+    ["Memory", "The WebAssembly memory of the cut."],
+    ["Storage", "The files of this site: the input from Get, the temporary files and the result."],
+    ["Steps", "Each step gets its time when it ends. Move the pointer on a step to see its details."],
+  ]],
+  files: ["Files", [
+    ["Save all to a folder", "Writes all files into a folder that you select (Chrome and Edge on a computer)."],
+    ["A file name", "Downloads that file."],
+    ["Refresh or close", "The page removes all its files. Save them first."],
+  ]],
+};
+for (const b of document.querySelectorAll("button.help")) b.addEventListener("click", (e) => {
+  e.preventDefault();     // a "?" in a label does not select its field
+  const [title, items] = HELP[b.dataset.help];
+  $("help-title").textContent = title;
+  $("help-text").replaceChildren(...items.flatMap(([term, text]) => [
+    Object.assign(document.createElement("dt"), { textContent: term }),
+    Object.assign(document.createElement("dd"), { textContent: text }),
+  ]));
+  $("help-box").showModal();
 });
 
 // ---- 1. the input
@@ -115,7 +185,8 @@ $("threads").disabled = !isolated;
 $("threads-hint").textContent = isolated ? "" : "This page is not cross-origin isolated, so the cut uses one thread.";
 
 function ready() {
-  const ok = source() === "file" ? $("file").files.length > 0 : regionReady;
+  const ok = (source() === "file" ? $("file").files.length > 0 : regionReady)
+    && (kind() !== "area" || $("boundary").files.length > 0);     // one area needs its boundary
   $("start").disabled = !ok || !!worker;
 }
 
@@ -123,8 +194,10 @@ function ready() {
 $("start").addEventListener("click", async () => {
   await cleaned;
   const boundary = $("boundary").files[0] ? await $("boundary").files[0].text() : null;
+  const steps = STEPS[kind()];
   const msg = {
-    zoom: Number($("zoom").value), border: Number($("border").value) || 0, threads: Number($("threads").value) || 1,
+    kind: kind(), name: ($("boundary").files[0]?.name.replace(/\.(geo)?json$/i, "") || "area") + ".osm.pbf",
+    level: Number($(kind() === "h3" ? "res" : "zoom").value), border: Number($("border").value) || 0, threads: Number($("threads").value) || 1,
     boundary, complete: "multipolygon,boundary",
     ...(source() === "file" ? { file: $("file").files[0] } : { region: fileName(region.id) }),
   };
@@ -132,7 +205,7 @@ $("start").addEventListener("click", async () => {
   $("bar").style.width = "0";
   $("result").hidden = true;
   $("error").hidden = true;
-  $("steps").replaceChildren(...STEPS.map(([id, label]) => {
+  $("steps").replaceChildren(...steps.map(([id, label]) => {
     const li = document.createElement("li");
     li.dataset.step = id;
     li.innerHTML = `<span>${id}</span><b></b><span class="t"></span>`;
@@ -154,8 +227,9 @@ $("start").addEventListener("click", async () => {
   used();
   const storage = setInterval(used, 1000);
   const end = () => { clearInterval(timer); clearInterval(storage); used(); worker?.terminate(); worker = null; $("stop").disabled = true; ready(); };
-  const mark = (id) => {
-    const li = $("steps").querySelector(`[data-step="${id}"]`);
+  // a step message ends the first step that is not done
+  const mark = () => {
+    const li = $("steps").querySelector("li:not(.done)");
     for (const x of $("steps").children) x.classList.remove("run");
     li?.nextElementSibling?.classList.add("run");
     return li;
@@ -164,23 +238,23 @@ $("start").addEventListener("click", async () => {
   worker.onmessage = ({ data: m }) => {
     if (m.type === "stage") {
       $("stage").textContent = m.name;
-      if (m.name === "cut") { lastT = m.t; $("steps").firstElementChild.classList.add("run"); $("stage").textContent = STEPS[0][1]; }
+      if (m.name === "cut") { lastT = m.t; $("steps").firstElementChild.classList.add("run"); $("stage").textContent = steps[0][1]; }
     } else if (m.type === "memory") {
       shared = m.memory;
       show(m.bytes);
     } else if (m.type === "step") {
       if (m.memory) show(m.memory);
       if (m.name.startsWith("panic:")) { panic = m.name; return; }
-      const [, id, text] = m.name.match(/^tile cut (\w+): (.*)$/) ?? [];
-      const li = id && mark(id);
+      const text = m.name.replace(/^[^:]*: /, "");
+      const li = mark();
       if (li) {
         li.classList.add("done");
-        $("bar").style.width = `${(100 * $("steps").querySelectorAll(".done").length) / STEPS.length}%`;
+        $("bar").style.width = `${(100 * $("steps").querySelectorAll(".done").length) / steps.length}%`;
         li.querySelector("b").textContent = text.replace(/ \(.*$/, "");
         li.title = text;
         li.querySelector(".t").textContent = `${((m.t - lastT) / 1000).toFixed(2)} s`;
         lastT = m.t;
-        const next = STEPS[STEPS.findIndex((s) => s[0] === id) + 1];
+        const next = steps[[...$("steps").children].indexOf(li) + 1];
         $("stage").textContent = next ? next[1] : "the end";
       }
     } else if (m.type === "done") {
@@ -214,7 +288,11 @@ async function result({ report, parts, bytes }) {
   files.forEach((f) => { f.size = f.parts.reduce((s, p) => s + p[1], 0); });
   saved = { all, files };
   $("result").hidden = false;
-  $("summary").textContent = `${files.length} tile files (${mib(bytes)}) of ${report.tiles} tiles at zoom ${$("zoom").value}, in ${report.seconds.toFixed(1)} s.`;
+  $("summary").textContent = kind() === "area"
+    ? `One area file (${mib(bytes)}), in ${report.seconds.toFixed(1)} s.`
+    : kind() === "h3"
+    ? `${files.length} cell files (${mib(bytes)}) of ${report.tiles} cells at resolution ${$("res").value}, in ${report.seconds.toFixed(1)} s.`
+    : `${files.length} tile files (${mib(bytes)}) of ${report.tiles} tiles at zoom ${$("zoom").value}, in ${report.seconds.toFixed(1)} s.`;
   const MAX = 1000;
   $("files").replaceChildren(...files.slice(0, MAX).map((f) => {
     const tr = document.createElement("tr");
