@@ -8,8 +8,10 @@ const STEPS = [
   ["3d", "the members of the multipolygons"], ["4", "the nodes from outside"],
   ["5a", "Read 2: the nodes to the tiles"], ["5d", "Read 2: the ways to the tiles"], ["5e", "Read 2: the relations, and the tile files"],
 ];
-// ?relay=<address>: a relay that sends Geofabrik's files with CORS headers (serve.py has one: ?relay=relay)
-const relay = new URLSearchParams(location.search).get("relay");
+// The relay: a Cloudflare Worker of the owner that sends Geofabrik's files with CORS headers (Geofabrik sends none).
+// It accepts only files of download.geofabrik.de and only some origins. ?relay=<address> gives another relay
+// (serve.py has one: ?relay=relay).
+const relay = new URLSearchParams(location.search).get("relay") ?? "https://duckosm-relay.khoshkhah.workers.dev";
 const mib = (b) => b >= 1 << 30 ? `${(b / 2 ** 30).toFixed(2)} GiB` : `${(b / 2 ** 20).toFixed(1)} MiB`;
 const regionsDir = () => navigator.storage.getDirectory().then((d) => d.getDirectoryHandle("regions", { create: true }));
 const fileName = (id) => id.replace(/[^a-z0-9_-]/gi, "_") + ".osm.pbf";

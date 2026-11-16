@@ -16,8 +16,8 @@ folder. On a phone, the page downloads one file at a time.
         - **Get** puts the file into the storage of the site, with its progress. The cut then uses it.
         - **Download** saves the file on your computer. Then select it as a file on this computer.
 
-        Geofabrik does not let other web pages read its files (it sends no CORS headers), so **Get** needs a relay.
-        The page has no public relay now: **Get** is not available, and the page says so.
+        Geofabrik does not let other web pages read its files (it sends no CORS headers). Thus **Get** gets the file
+        through a relay: a small Cloudflare Worker that accepts only files of download.geofabrik.de.
     - **A file on this computer**: select the `.osm.pbf` file.
 3. Set the settings:
     - **Zoom**: the zoom of the tiles (default 8).
