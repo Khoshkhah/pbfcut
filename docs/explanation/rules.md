@@ -69,19 +69,20 @@ the relations the file has in the id files, so it reads no block of the input ag
 ### The threads of read 2
 
 ```mermaid
-flowchart LR
-    subgraph T["① The calling thread"]
-        direction TB
-        R["<b>Read</b><br/>the next blocks of the input,<br/>with the extra rows of each block"]
-        WR["<b>Write</b><br/>the bytes of each tile to its file,<br/>in the order of the input"]
+flowchart TB
+    subgraph T1["① The calling thread"]
+        R["<b>Read</b><br/>the next blocks<br/>and their extra rows"]
     end
 
     subgraph P["② The threads of the pool"]
-        direction TB
         D["<b>Decode</b><br/>a block"]
         G["<b>Route</b><br/>each element to its tiles"]
-        K["<b>Pack</b><br/>the elements of each tile into PBF blocks"]
+        K["<b>Pack</b><br/>the elements of each tile<br/>into PBF blocks"]
         D --> G --> K
+    end
+
+    subgraph T2["③ The calling thread"]
+        WR["<b>Write</b><br/>the bytes of each tile<br/>to its file, in input order"]
     end
 
     R -- "a batch of blocks" --> D
