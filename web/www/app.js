@@ -224,7 +224,8 @@ $("start").addEventListener("click", async () => {
   }));
   const t0 = performance.now();
   let shared = null, lastT = null, panic = null;
-  const show = (bytes) => { $("memory").textContent = mib(bytes); };
+  let top = 0;     // the most WebAssembly memory of this cut
+  const show = (bytes) => { top = Math.max(top, bytes); $("memory").textContent = mib(bytes); };
   timer = setInterval(() => {
     $("time").textContent = `${((performance.now() - t0) / 1000).toFixed(1)} s`;
     if (shared) show(shared.buffer.byteLength);
@@ -277,7 +278,11 @@ $("start").addEventListener("click", async () => {
     } else if (m.type === "error") {
       end();
       $("error").hidden = false;
-      $("error").textContent = `The cut stopped: ${panic ?? m.message}`;
+      // a full WebAssembly memory (4 GiB) stops the module with "unreachable", with no message of its own
+      const full = !panic && /unreachable/i.test(m.message) && top > 3.8 * 2 ** 30;
+      $("error").textContent = full
+        ? "The cut stopped: the WebAssembly memory is full (4 GiB). Use the command line for this file, or a boundary that is smaller."
+        : `The cut stopped: ${panic ?? m.message}`;
     }
   };
   worker.postMessage(msg);
