@@ -28,8 +28,9 @@ if (typeof window === 'undefined') {
         }
 
         // pbfcut: each file of this site is checked with the server (Pages keeps files 10 minutes in the cache of the
-        // browser), so a page never mixes the files of two versions; an unchanged file costs a 304 answer
-        const local = r.method === "GET" && new URL(r.url).origin === self.location.origin;
+        // browser), so a page never mixes the files of two versions; an unchanged file costs a 304 answer. A request with
+        // `Range` goes on as it is: a new request would drop the header
+        const local = r.method === "GET" && new URL(r.url).origin === self.location.origin && !r.headers.has("range");
         const request = local
             ? new Request(r.url, { cache: "no-cache", credentials: "same-origin" })
             : (coepCredentialless && r.mode === "no-cors")

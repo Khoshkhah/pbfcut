@@ -53,6 +53,7 @@ jobs:
           pip install playwright
           playwright install --with-deps chromium
           python web/e2e.py
+          python web/get_e2e.py
 
   manual:
     runs-on: ubuntu-latest

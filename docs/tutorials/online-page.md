@@ -17,7 +17,8 @@ folder. On a phone, the page downloads one file at a time.
         - **Download** saves the file on your computer. Then select it as a file on this computer.
 
         Geofabrik does not let other web pages read its files (it sends no CORS headers). Thus **Get** gets the file
-        through a relay: a small Cloudflare Worker that accepts only files of download.geofabrik.de.
+        through a relay: a small Cloudflare Worker that accepts only files of download.geofabrik.de. The page gets the file in
+        8 parts at the same time, so a large file takes about one third of the time of one connection.
     - **A file on this computer**: select the `.osm.pbf` file.
 3. Select the kind of cut:
     - **Tiles**: the square tiles of web maps. At zoom z, the map has 2^z × 2^z tiles. One file for each tile, for

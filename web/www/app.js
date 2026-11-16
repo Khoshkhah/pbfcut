@@ -142,31 +142,99 @@ $("region").addEventListener("input", async () => {
   }
   ready();
 });
-// the download through the relay, as a stream into OPFS; a written file is complete (createWritable writes to a
-// temporary file and replaces the file at close)
+// the download through the relay into OPFS. One connection to Geofabrik is slow (Luxembourg, 48 MB: 30 s), so the file
+// comes in 8 parts at the same time with `Range`, each part at its place in the file (11 s). "<region>-latest.osm.pbf" is a
+// redirect that Geofabrik answers after about 30 s, each time. A dated file that is there answers in 0.5 s. So the page asks
+// for the files of the last 5 days (UTC) at the same time, waits 1.5 s, and takes the newest that has answered: it is
+// what "latest" is. If none has answered, the request for "latest" is the fallback. All parts are of the dated file
+// (`Content-Location`), and each answer must have the same ETag. A part that fails starts again at the byte where it
+// stopped. A server that gives no ranges gets the old single stream. A written file is complete (createWritable
+// writes to a temporary file and replaces the file at close).
+const PARTS = 8, TRIES = 4, MIN_PART = 4 << 20;
+async function download(x, onProgress, signal) {
+  const ctl = new AbortController();     // the signal of the caller, and the stop of all parts when one part fails
+  signal?.addEventListener("abort", () => ctl.abort());
+  const get = (u, init) => fetch(`${relay}?url=${encodeURIComponent(u)}`, { signal: ctl.signal, ...init });
+  const bad = async (r) => new Error(`the relay answered ${r.status}: ${(await r.text()).trim()}`);
+  const dated = (back) => x.pbf.replace("-latest.", `-${new Date(Date.now() - back * 864e5).toISOString().slice(2, 10).replace(/-/g, "")}.`);
+  const tries = [0, 1, 2, 3, 4].map((back) => {
+    const t = { stop: new AbortController(), head: null };
+    t.done = get(dated(back), { method: "HEAD", signal: t.stop.signal }).then((h) => (t.head = h), () => null);
+    return t;
+  });
+  await Promise.race([Promise.all(tries.map((t) => t.done)), new Promise((ok) => setTimeout(ok, 1500))]);
+  for (const t of tries) t.stop.abort();
+  const head = tries.find((t) => t.head?.ok)?.head ?? await get(x.pbf, { method: "HEAD" });
+  if (!head.ok) throw await bad(head);
+  const total = Number(head.headers.get("Content-Length")) || 0;
+  const url = head.headers.get("Content-Location");           // the dated file: all parts are of one version
+  const etag = head.headers.get("ETag");
+  const parts = head.headers.get("Accept-Ranges") === "bytes" && url ? Math.min(PARTS, Math.floor(total / MIN_PART)) : 0;
+  const out = await (await (await regionsDir()).getFileHandle(fileName(x.id), { create: true })).createWritable();
+  let got = 0;
+  const part = async (i) => {
+    const size = Math.ceil(total / parts), end = Math.min(total, (i + 1) * size) - 1;
+    let pos = i * size;
+    for (let t = 1; pos <= end; t++) {
+      try {
+        const r = await get(url, { headers: { Range: `bytes=${pos}-${end}` } });
+        if (r.status !== 206) {
+          const e = await bad(r);
+          e.fatal = r.status < 500;      // 200 (no range) or a 4xx answer: a new try gives the same answer
+          throw e;
+        }
+        if (etag && r.headers.get("ETag") !== etag) throw new Error("the file changed during the download");
+        const reader = r.body.getReader();
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          await out.write({ type: "write", position: pos, data: value });
+          pos += value.length;
+          got += value.length;
+          onProgress(got, total);
+        }
+        if (pos <= end) throw new Error("a part ended early");
+      } catch (e) {
+        if (ctl.signal.aborted || e.fatal || t >= TRIES) throw e;
+        await new Promise((ok) => setTimeout(ok, 500 * t));       // the next try starts at pos: the bytes written stay
+      }
+    }
+  };
+  try {
+    if (parts) await Promise.all(Array.from({ length: parts }, (_, i) => part(i).catch((e) => { ctl.abort(); throw e; })));
+    else {
+      const r = await get(x.pbf);
+      if (!r.ok) throw await bad(r);
+      const reader = r.body.getReader();
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        await out.write(value);
+        got += value.length;
+        onProgress(got, total);
+      }
+    }
+    await out.close();
+  } catch (e) {
+    await out.abort().catch(() => {});
+    throw e;
+  }
+  if (total && got !== total) throw new Error(`the download stopped after ${got} of ${total} bytes`);
+  return got;
+}
 $("get").addEventListener("click", async () => {
   const x = region;
   $("get").disabled = true;
   await cleaned;
   $("get-bar").hidden = false;
+  const start = performance.now();
   try {
-    const r = await fetch(`${relay}?url=${encodeURIComponent(x.pbf)}`);
-    if (!r.ok) throw new Error(`the relay answered ${r.status}`);
-    const total = Number(r.headers.get("Content-Length")) || 0, start = performance.now();
-    const out = await (await (await regionsDir()).getFileHandle(fileName(x.id), { create: true })).createWritable();
-    let got = 0;
-    const rd = r.body.getReader();
-    for (;;) {
-      const { done, value } = await rd.read();
-      if (done) break;
-      await out.write(value);
-      got += value.length;
-      $("get-bar").value = total ? got / total : 0;
-      $("get-text").textContent = `${mib(got)}${total ? " of " + mib(total) : ""}, ${((performance.now() - start) / 1000).toFixed(1)} s`;
-    }
-    await out.close();
+    const got = await download(x, (n, total) => {
+      $("get-bar").value = total ? n / total : 0;
+      $("get-text").textContent = `${mib(n)}${total ? " of " + mib(total) : ""}, ${((performance.now() - start) / 1000).toFixed(1)} s`;
+    });
     regionReady = region === x;
-    $("get-text").textContent = `The file is in the storage of this site (${mib(got)}).`;
+    $("get-text").textContent = `The file is in the storage of this site (${mib(got)}, ${((performance.now() - start) / 1000).toFixed(1)} s).`;
   } catch (e) {
     $("get-text").textContent = `The download stopped: ${e.message}`;
   }
