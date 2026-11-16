@@ -1,64 +1,44 @@
 # Cut a file in your browser
 
-The online page cuts a `.osm.pbf` file into map tiles in your browser: <https://khoshkhah.github.io/pbfcut/>. The page
-does not upload the file. The cut runs in WebAssembly, and its temporary files and the tile files go into the storage
-of the site (OPFS), not into the memory of the tab.
+The [online page](https://khoshkhah.github.io/pbfcut/) cuts a `.osm.pbf` file in your browser. You do not install
+anything, and the file does not leave your computer.
 
-Use Chrome or Edge on a computer. Other browsers can do the cut, but only Chrome and Edge can save all files into a
-folder. On a phone, the page downloads one file at a time.
+Use Chrome or Edge on a computer. Only these browsers can save all files into a folder.
 
 ## Procedure
 
 1. Open <https://khoshkhah.github.io/pbfcut/>.
-2. Select the input file:
-    - **A region of Geofabrik**: type the name of the region, for example `Monaco`, and select it in the list.
-      Then click one of the two buttons:
-        - **Get** puts the file into the storage of the site, with its progress. The cut then uses it.
-        - **Download** saves the file on your computer. Then select it as a file on this computer.
-
-        Geofabrik does not let other web pages read its files (it sends no CORS headers). Thus **Get** gets the file
-        through a relay: a small Cloudflare Worker that accepts only files of download.geofabrik.de. The page gets the file in
-        8 parts at the same time, so a large file takes about one third of the time of one connection.
-    - **A file on this computer**: select the `.osm.pbf` file.
+2. Select the input file. Do one of these steps:
+    - Type the name of a Geofabrik region, for example `Monaco`, and select it. Click **Get**.
+    - Select a `.osm.pbf` file on your computer.
 3. Select the kind of cut:
-    - **Tiles**: the square tiles of web maps. At zoom z, the map has 2^z × 2^z tiles. One file for each tile, for
-      example `8_136_74.osm.pbf`.
-    - **H3 cells**: the hexagons of the H3 grid. Each resolution more makes the cells 7 times smaller. One file for
-      each cell, with the H3 index as its name, for example `872b02d27ffffff.osm.pbf`.
-    - **Areas**: no grid. One file for each feature of a GeoJSON FeatureCollection, named by its property `name`
-      (as `pbfcut areas`). The areas must not overlap. A file with one Polygon gives one area, named after the file.
-4. Set the settings:
-    - **Zoom** (tiles) or **Resolution** (H3 cells): the size of the tiles or cells. The list shows the size of each.
-    - **Border (m)**: each tile file also gets the data in this border around the tile (default 0).
-    - **Threads**: the number of threads of the cut. The default is the number of cores of the computer.
-    - **Boundary** (optional): a file in longitude and latitude (WGS 84): GeoJSON (a Polygon, a MultiPolygon, a
-      Feature or a FeatureCollection), an osmosis `.poly` file, or WKT. All its polygons together are the area. With
-      no boundary, the tiles or cells cover the bounding box in the header of the file.
-5. Click **Cut**. The page shows the time, the step, the WebAssembly memory and the storage of the site. Each step
-   of the cut gets a check mark and its time. **Stop** stops the cut.
-6. Click **Save all to a folder**, and select a folder. The page writes one file for each tile, for example
-   `8_136_74.osm.pbf`. To get one file, click its name in the table.
 
-The tile files are equal to the files of `pbfcut tiles` with the same zoom and boundary (see
-[The command line](../reference/cli.md)).
+    | Kind | Output |
+    |---|---|
+    | **Tiles** | One file for each map tile, for example `8_136_74.osm.pbf`. |
+    | **H3 cells** | One file for each H3 cell, for example `872b02d27ffffff.osm.pbf`. |
+    | **Areas** | One file for each feature of a GeoJSON file, with its property `name` as the file name. The areas must not overlap. |
 
-## Threads
+4. Set the **Zoom** or the **Resolution**. The list shows the size of the tiles or cells.
+5. Optional: select a **Boundary** file (GeoJSON, `.poly` or WKT). The cut then keeps only the data inside it.
+6. Click **Cut**. The page shows each step and its time.
+7. Click **Save all to a folder**, and select a folder.
 
-Threads need a page that is cross-origin isolated. GitHub Pages cannot send the two headers for this (COOP and COEP),
-so a service worker of the page adds them. The page loads two times when you open it for the first time. If the browser
-does not let the service worker run, the page uses one thread, and it says so under the settings.
-
-## Speed
-
-The command line is about 1.7 times faster than the online page (see [Comparison](../explanation/comparison.md)).
+The files are equal to the files of the [command line](../reference/cli.md) with the same settings.
 
 ## Limits
 
-- The WebAssembly memory has a maximum of 4 GiB.
-- The storage of the site must hold the temporary files and the tile files. The browser gives each site a part of the
-  free disk space. A file of 1 GB needs approximately 3 GB of free storage.
-- The page keeps the tile files of the last cut only. A new cut removes them.
+- The page can use at most 4 GiB of memory.
+- The browser must have free storage of about 3 times the size of the input file.
+- The command line is about 1.7 times faster (see [Comparison](../explanation/comparison.md)).
 
 !!! warning
-    When you refresh or close the page, the page removes all its files from the storage of the site: the downloaded
-    region, the temporary files and the tile files. Save the tile files before you refresh or close the page.
+    When you close or refresh the page, it deletes all its files. Save the files before you close the page.
+
+## Notes
+
+- **Get** downloads the file from Geofabrik through a small relay, because Geofabrik does not let other web pages
+  read its files. **Download** saves the file on your computer instead.
+- The first time that you open the page, it loads two times. This lets the cut use all the cores of the computer.
+- **Border (m)** adds the data near each tile or cell to its file. **Threads** sets the number of cores that the cut
+  uses.
