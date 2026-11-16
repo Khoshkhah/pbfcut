@@ -26,10 +26,12 @@ Sweden (975 MB) on a Mac mini (12 cores, 16 GB):
 | zoom 6, 21 tiles | 11.2 s, 1.8 GB | 50.9 s, 9.8 GB |
 | zoom 8, 206 tiles | 15.2 s, 1.5 GB | stopped after 378 s, no data |
 
+The same code builds for WebAssembly (`wasm32-unknown-unknown`). The online page cuts a file in your browser, with no
+installation: https://khoshkhah.github.io/pbfcut/ (source in `web/`). The command line is about 1.6 times faster than
+the online page (Sweden, zoom 8, 12 threads, Mac mini: 12.7 s against 19.8 s in Chromium).
+
 The H3 cells of resolution 6 (21,618 files) take 94 s and 1.6 GB of heap; with `--memory 512M`, 180 s and 755 MB
 ([Speed and memory](https://khoshkhah.github.io/pbfcut/manual/explanation/speed-and-memory/)).
-
-The same code builds for WebAssembly (`wasm32-unknown-unknown`), so a browser page can cut a file.
 
 Planned: a list of H3 cells of mixed resolutions, GeoJSON areas that can overlap (as the extracts of `osmium extract -c`).
 
@@ -62,6 +64,7 @@ pbfcut = { git = "https://github.com/Khoshkhah/pbfcut" }
 ```
 
 `pbfcut::tilecut::cut_to_tiles` writes the tile files into a folder, and `pbfcut::tilecut::cut_to_cells` the cell
-files (the list of cells from `pbfcut::cells::cells`). `pbfcut::extract::cut_to_pbf` cuts one area.
+files (the list of cells from `pbfcut::cells::cells`). `cut_to_sink` and `cut_cells_to_sink` give the same files to a
+function, for example in the browser. `pbfcut::extract::cut_to_pbf` cuts one area.
 
 MIT license.

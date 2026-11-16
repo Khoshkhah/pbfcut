@@ -3,3 +3,6 @@ site/
 out*/
 out*.json
 tools/golden/target/
+web/www/pkg/
+web/www/pkg-threads/
+web/www/regions.json

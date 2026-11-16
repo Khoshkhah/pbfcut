@@ -18,6 +18,8 @@ node in one compressed list for all tiles, and writes the large lists to tempora
 
 - [Cut a file into tiles](tutorials/cut-to-tiles.md): a tutorial on Monaco.
 - [Cut a file into H3 cells](tutorials/cut-to-h3-cells.md): the same, with H3 cells.
+- [Cut a file in your browser](tutorials/online-page.md): the [online page](https://khoshkhah.github.io/pbfcut/), with
+  no installation.
 - [The command line](reference/cli.md): all commands and options.
 - [The rules of the cut](explanation/rules.md): what each tile file holds.
 - [Speed and memory](explanation/speed-and-memory.md): the time and the memory by zoom, and the memory budget.
@@ -26,4 +28,3 @@ node in one compressed list for all tiles, and writes the large lists to tempora
 
 - H3 cells: a list of cells of different resolutions.
 - GeoJSON areas: each feature is one output, as the extracts of `osmium extract -c`. The areas can overlap.
-- An online page that cuts a file in the browser.

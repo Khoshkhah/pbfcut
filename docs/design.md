@@ -61,7 +61,8 @@ the same book. Only the function "the areas of a point" changes:
 
 In the code, `tilecut::Grid` is "the areas of a point" for tiles and cells: the area of a point, the areas near a
 point (the border; for a cell, the six neighbours of ring 1, so the border must be less than half the edge of a cell),
-and the name of the file. The rest of the cut uses only the numbers of the areas. `h3o` builds with no `std` feature:
+and the name of the file. The rest of the cut uses only the numbers of the areas. `cut_to_cells` and
+`cut_cells_to_sink` are the cell forms of `cut_to_tiles` and `cut_to_sink`. `h3o` builds with no `std` feature:
 its math is then `libm` (pure Rust), so the cell of a point does not change with the target. A cell list
 (`cells::cells`) comes from a flood fill over the cells that touch the box of the boundary, then the test
 `Boundary::touches_box` with the box of each cell.
@@ -208,6 +209,10 @@ command line.
 3. **M2, H3 cells and GeoJSON areas.** The function "the areas of a point" for H3 and for GeoJSON, the sets of areas
    for overlap, the commands `h3` and `areas`, their golden tests, and a measurement against osmium on Sweden with the
    same areas.
-4. **M3, the online page** of section 6, on GitHub Pages.
+4. **M3, the online page** of section 6, on GitHub Pages. Done: map tiles (a zoom, a boundary, a border, the threads),
+   a region of Geofabrik or a local file, the progress and the steps, "Save all to a folder", the e2e test
+   (`web/e2e.py`). Geofabrik sends no CORS headers: the page gives a download link, and Get streams the
+   file into OPFS through a relay (the default is the owner's Cloudflare Worker; `web/serve.py` has one for tests). Not done: H3 cells, GeoJSON areas, the map before
+   the cut, the CPU use, the `.zip` download.
 
 A step is done only when its part of the manual is done.

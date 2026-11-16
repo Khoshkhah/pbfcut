@@ -251,6 +251,57 @@ mod tests {
         assert!(n > 4, "the cut gave {n} tile files");
     }
 
+    /// The cut into a sink (the online page) gives the same tile files as the cut into a folder, also with a border.
+    #[test]
+    fn the_cut_into_a_sink_equals_the_cut_into_a_folder() {
+        let data = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/data");
+        let pbf = data.join("monaco.osm.pbf");
+        let b = Boundary::parse(&std::fs::read_to_string(data.join("monaco.geojson")).unwrap()).unwrap();
+        let tiles = crate::tiles::tiles(&b, 15);
+        let open = || std::fs::File::open(&pbf).map_err(|e| e.to_string());
+        let complete = ["multipolygon", "boundary"];
+        let dir = std::env::temp_dir().join(format!("pbfcut-sink-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        cut_to_tiles(open, &b, &tiles, &dir, &complete, 25.0, None).unwrap();
+        let mut got = vec![Vec::new(); tiles.len()];
+        cut_to_sink(open, &b, &tiles, &complete, 25.0, &mut |t, bytes| {
+            got[t as usize].extend_from_slice(bytes);
+            Ok(())
+        })
+        .unwrap();
+        for (t, got) in tiles.iter().zip(&got) {
+            let want = std::fs::read(dir.join(format!("{}_{}_{}.osm.pbf", t.z, t.x, t.y))).unwrap_or_default();
+            assert!(*got == want, "tile {t:?}: {} bytes in the sink, {} in the folder", got.len(), want.len());
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert!(got.iter().filter(|g| !g.is_empty()).count() > 4);
+    }
+
+    #[test]
+    fn the_cut_of_cells_into_a_sink_equals_the_cut_into_a_folder() {
+        let data = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/data");
+        let pbf = data.join("monaco.osm.pbf");
+        let b = Boundary::parse(&std::fs::read_to_string(data.join("monaco.geojson")).unwrap()).unwrap();
+        let cells = crate::cells::cells(&b, Resolution::Nine);
+        let open = || std::fs::File::open(&pbf).map_err(|e| e.to_string());
+        let complete = ["multipolygon", "boundary"];
+        let dir = std::env::temp_dir().join(format!("pbfcut-cell-sink-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        cut_to_cells(open, &b, &cells, &dir, &complete, 25.0).unwrap();
+        let mut got = vec![Vec::new(); cells.len()];
+        cut_cells_to_sink(open, &b, &cells, &complete, 25.0, &mut |t, bytes| {
+            got[t as usize].extend_from_slice(bytes);
+            Ok(())
+        })
+        .unwrap();
+        for (c, got) in cells.iter().zip(&got) {
+            let want = std::fs::read(dir.join(format!("{c}.osm.pbf"))).unwrap_or_default();
+            assert!(*got == want, "cell {c}: {} bytes in the sink, {} in the folder", got.len(), want.len());
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert!(got.iter().filter(|g| !g.is_empty()).count() > 20);
+    }
+
     /// With a [`NodeUses`], each tile file has a junctions file: rows sorted by node, with the flags of `of_node` and
     /// [`HOME`], for nodes outside the tile only.
     #[test]
@@ -418,12 +469,10 @@ struct Parts {
 
 /// Where the part files are: files in a temporary folder (the build by tiles: a file is open only while it is written,
 /// because the tiles are more than a process can keep open), or chunks of one temporary file of the store
-/// ([`cut_to_store`]: the browser has no folders, only the store in OPFS), or in memory (the browser: the parts of a few
-/// tiles, read on the thread that owns the OPFS file, so that the other threads can make their tile files).
+/// ([`cut_to_store`]: the browser has no folders, only the store in OPFS).
 enum Files {
     Dir(PathBuf),
     // the browser only
-    #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
     Store(Chunks),
 }
 
@@ -485,12 +534,9 @@ impl Parts {
 /// Files as chunks of one temporary file of the store: each file is the list of its chunks (place, length). A removed
 /// file keeps its bytes in the temporary file until the end.
 pub struct Chunks {
-    /// the temporary file and its end; none: each chunk in memory by itself (`mem`)
-    file: Option<std::sync::Mutex<(Box<dyn crate::store::Blob>, u64)>>,
-    /// the chunks in memory (`Chunks::memory`): no large block that grows (a block that doubles needs up to three times
-    /// the data at a time: Sweden ran out of the 4 GiB of the browser)
-    mem: std::sync::Mutex<Vec<Vec<u8>>>,
-    /// each file: its chunks (place in the file or number in `mem`, length)
+    /// the temporary file and its end
+    file: std::sync::Mutex<(Box<dyn crate::store::Blob>, u64)>,
+    /// each file: its chunks (place in the file, length)
     index: std::sync::Mutex<FxHashMap<(u32, &'static str), Vec<(u64, u64)>>>,
     /// the places in the file of removed chunks (place, length), used again before the file grows: the parts of a tile
     /// go when its tile file is made, and the tile files take their place (France: the file had all parts and all tile
@@ -502,71 +548,46 @@ pub struct Chunks {
 const SMALLEST_FREE: u64 = 64 << 10;
 
 impl Chunks {
-    #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
     fn new(store: &dyn crate::store::Store) -> io::Result<Chunks> {
-        Ok(Chunks { file: Some(std::sync::Mutex::new((store.create()?, 0))), mem: Default::default(), index: Default::default(), free: Default::default() })
-    }
-    /// The chunks in memory, each by itself.
-    #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
-    fn memory() -> Chunks {
-        Chunks { file: None, mem: Default::default(), index: Default::default(), free: Default::default() }
+        Ok(Chunks { file: std::sync::Mutex::new((store.create()?, 0)), index: Default::default(), free: Default::default() })
     }
     fn append(&self, key: (u32, &'static str), bytes: &[u8]) -> io::Result<()> {
         if bytes.is_empty() {
             return Ok(());
         }
-        let at = match &self.file {
-            Some(file) => {
-                let mut f = file.lock().expect("the file");
-                // first the places of removed chunks, then the end of the file
-                let mut rest = bytes;
-                let mut placed = Vec::new();
-                while !rest.is_empty() {
-                    let Some((pos, len)) = self.free.lock().expect("the free places").pop() else { break };
-                    let n = len.min(rest.len() as u64);
-                    f.0.seek(SeekFrom::Start(pos))?;
-                    f.0.write_all(&rest[..n as usize])?;
-                    placed.push((pos, n));
-                    if len - n >= SMALLEST_FREE {
-                        self.free.lock().expect("the free places").push((pos + n, len - n));
-                    }
-                    rest = &rest[n as usize..];
-                }
-                if !rest.is_empty() {
-                    let at = f.1;
-                    f.0.seek(SeekFrom::Start(at))?;
-                    f.0.write_all(rest)?;
-                    f.1 += rest.len() as u64;
-                    placed.push((at, rest.len() as u64));
-                }
-                self.index.lock().expect("the index").entry(key).or_default().extend(placed);
-                return Ok(());
+        let mut f = self.file.lock().expect("the file");
+        // first the places of removed chunks, then the end of the file
+        let mut rest = bytes;
+        let mut placed = Vec::new();
+        while !rest.is_empty() {
+            let Some((pos, len)) = self.free.lock().expect("the free places").pop() else { break };
+            let n = len.min(rest.len() as u64);
+            f.0.seek(SeekFrom::Start(pos))?;
+            f.0.write_all(&rest[..n as usize])?;
+            placed.push((pos, n));
+            if len - n >= SMALLEST_FREE {
+                self.free.lock().expect("the free places").push((pos + n, len - n));
             }
-            None => {
-                let mut m = self.mem.lock().expect("the chunks");
-                m.push(bytes.to_vec());
-                (m.len() - 1) as u64
-            }
-        };
-        self.index.lock().expect("the index").entry(key).or_default().push((at, bytes.len() as u64));
+            rest = &rest[n as usize..];
+        }
+        if !rest.is_empty() {
+            let at = f.1;
+            f.0.seek(SeekFrom::Start(at))?;
+            f.0.write_all(rest)?;
+            f.1 += rest.len() as u64;
+            placed.push((at, rest.len() as u64));
+        }
+        self.index.lock().expect("the index").entry(key).or_default().extend(placed);
         Ok(())
     }
     fn reader(&self, key: (u32, &'static str)) -> Option<ChunkReader<'_>> {
         let chunks = self.index.lock().expect("the index").get(&key)?.clone();
         Some(ChunkReader { c: self, chunks, i: 0, off: 0 })
     }
-    /// A file goes: in memory its chunks go too; in the file its places are used again (`free`).
+    /// A file goes: its places in the file are used again (`free`).
     fn remove(&self, key: (u32, &'static str)) {
-        let gone = self.index.lock().expect("the index").remove(&key);
-        match (&self.file, gone) {
-            (None, Some(chunks)) => {
-                let mut m = self.mem.lock().expect("the chunks");
-                for (at, _) in chunks {
-                    m[at as usize] = Vec::new();
-                }
-            }
-            (Some(_), Some(chunks)) => self.free.lock().expect("the free places").extend(chunks.into_iter().filter(|c| c.1 >= SMALLEST_FREE)),
-            _ => {}
+        if let Some(chunks) = self.index.lock().expect("the index").remove(&key) {
+            self.free.lock().expect("the free places").extend(chunks.into_iter().filter(|c| c.1 >= SMALLEST_FREE));
         }
     }
 }
@@ -587,18 +608,9 @@ impl Read for ChunkReader<'_> {
         }
         let Some(&(at, len)) = self.chunks.get(self.i) else { return Ok(0) };
         let n = (len - self.off).min(b.len() as u64) as usize;
-        match &self.c.file {
-            Some(file) => {
-                let mut f = file.lock().expect("the file");
-                f.0.seek(SeekFrom::Start(at + self.off))?;
-                f.0.read_exact(&mut b[..n])?;
-            }
-            None => {
-                let m = self.c.mem.lock().expect("the chunks");
-                let o = self.off as usize;
-                b[..n].copy_from_slice(&m[at as usize][o..o + n]);
-            }
-        }
+        let mut f = self.c.file.lock().expect("the file");
+        f.0.seek(SeekFrom::Start(at + self.off))?;
+        f.0.read_exact(&mut b[..n])?;
         self.off += n as u64;
         Ok(n)
     }
@@ -1211,14 +1223,18 @@ pub fn cut_to_cells<R: Read + Seek + Send>(
     complete: &[&str],
     border_m: f64,
 ) -> Result<Vec<CutCounts>, String> {
-    let grid = Grid::cells(cells)?;
+    cut_to_dir(open, boundary, &cell_grid(cells, border_m)?, dir, complete, border_m, None)
+}
+
+/// The grid of the cells, with an error for cells of two resolutions or a border of half the edge of a cell or more.
+fn cell_grid(cells: &[CellIndex], border_m: f64) -> Result<Grid<'_>, String> {
     if let Some(c) = cells.first() {
         let half = c.resolution().edge_length_m() / 2.0;
         if border_m >= half {
             return Err(format!("the border ({border_m} m) must be less than half the edge of a cell ({half:.0} m)"));
         }
     }
-    cut_to_dir(open, boundary, &grid, dir, complete, border_m, None)
+    Grid::cells(cells)
 }
 
 /// The cut into the files of a folder (the tiles or the cells), with the temporary files in a folder of their own.
@@ -1315,43 +1331,58 @@ pub fn cut_to_store_build<R: Read + Seek + Send>(
     Ok(TileFiles { parts, tiles: tiles.iter().copied().zip(counts).collect() })
 }
 
-/// [`cut_to_store`], with each tile file given to `sink` (in pieces, tile by tile): the browser writes each tile into a
-/// file of its own, so that a worker for each tile can read it. With
-/// `memory`, the browser keeps the parts of the tiles in memory, compressed with zlib, not in OPFS: the cut writes many
-/// small pieces of parts, and each write to OPFS goes through JavaScript (slow on some PCs).
+/// [`cut_to_tiles`], with each tile file given to `sink` (in pieces, tile by tile) and not to a folder: the browser
+/// writes the tile files into storage of its own. The tile files are equal to the files of [`cut_to_tiles`]. The
+/// temporary files go into a temporary folder natively and into the store of the page in the browser
+/// ([`crate::store::set_temp_store`], for example OPFS).
 pub fn cut_to_sink<R: Read + Seek + Send>(
     open: impl Fn() -> Result<R, String>,
     boundary: &Boundary,
     tiles: &[Tile],
     complete: &[&str],
-    #[allow(unused_variables)] memory: bool,
-    #[allow(unused_mut)] mut sink: Sink,
+    border_m: f64,
+    sink: Sink,
+) -> Result<Vec<CutCounts>, String> {
+    cut_into_sink(open, boundary, &Grid::tiles(tiles), complete, border_m, sink)
+}
+
+/// [`cut_to_cells`], with each cell file given to `sink` (in pieces, cell by cell), as [`cut_to_sink`] does for the
+/// tiles. The cell files are equal to the files of [`cut_to_cells`].
+pub fn cut_cells_to_sink<R: Read + Seek + Send>(
+    open: impl Fn() -> Result<R, String>,
+    boundary: &Boundary,
+    cells: &[CellIndex],
+    complete: &[&str],
+    border_m: f64,
+    sink: Sink,
+) -> Result<Vec<CutCounts>, String> {
+    cut_into_sink(open, boundary, &cell_grid(cells, border_m)?, complete, border_m, sink)
+}
+
+/// The cut into a sink (the tiles or the cells), with the temporary files in a folder natively, in the store of the
+/// page in the browser.
+fn cut_into_sink<R: Read + Seek + Send>(
+    open: impl Fn() -> Result<R, String>,
+    boundary: &Boundary,
+    grid: &Grid,
+    complete: &[&str],
+    border_m: f64,
+    mut sink: Sink,
 ) -> Result<Vec<CutCounts>, String> {
     #[cfg(target_arch = "wasm32")]
     {
-        let chunks = if memory {
-            Chunks::memory()
-        } else {
-            Chunks::new(&*crate::store::temp_store()).map_err(|e| format!("a temporary file of the tile cut: {e}"))?
-        };
-        let files = Files::Store(chunks);
-        Ok(cut(open, boundary, &Grid::tiles(tiles), complete, 0.0, files, None, Some(&mut sink), !memory, None)?.0)
+        let files = Files::Store(Chunks::new(&*crate::store::temp_store()).map_err(|e| format!("a temporary file of the tile cut: {e}"))?);
+        Ok(cut(open, boundary, grid, complete, border_m, files, None, Some(&mut sink), false, None)?.0)
     }
     #[cfg(not(target_arch = "wasm32"))]
     {
-        let f = cut_to_store(open, boundary, tiles, complete)?;
-        let mut buf = vec![0u8; 1 << 20];
-        for i in 0..f.tiles.len() {
-            let mut r = f.reader(i);
-            loop {
-                let n = r.read(&mut buf).map_err(|e| format!("a tile file of the tile cut: {e}"))?;
-                if n == 0 {
-                    break;
-                }
-                sink(i as u32, &buf[..n])?;
-            }
-        }
-        Ok(f.tiles.iter().map(|t| t.1).collect())
+        static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let tmp = crate::store::temp_dir().join(format!("pbfcut-sink-{}-{n}", std::process::id()));
+        std::fs::create_dir_all(&tmp).map_err(|e| format!("{}: {e}", tmp.display()))?;
+        let cut = cut(open, boundary, grid, complete, border_m, Files::Dir(tmp.clone()), None, Some(&mut sink), false, None);
+        let _ = std::fs::remove_dir_all(&tmp);
+        Ok(cut?.0)
     }
 }
 
@@ -1367,8 +1398,8 @@ fn cut<R: Read + Seek + Send>(
     border_m: f64,
     files: Files,
     dir: Option<&Path>,
-    // the browser: the tile files to this sink, not to the store (`cut_to_sink`)
-    #[allow(unused_mut, unused_variables)] mut sink: Option<&mut Sink>,
+    // the tile files to this sink, not to the store (`cut_to_sink`)
+    sink: Option<&mut Sink>,
     // the parts and the tile files with no zlib (a temporary file read one time soon after); the build by tiles keeps zlib
     raw: bool,
     // the cut of the build by tiles: the junctions of each tile (in `dir`, or in `files` as the part "junctions")
