@@ -119,14 +119,19 @@ def main():
             if shots:
                 page.screenshot(path=shots / "desktop.png", full_page=True)
 
-            # areas: one file for each feature, equal to the files of `pbfcut areas` (also for overlapping areas, and
-            # for a plain Polygon file, which the page makes one area named after the file)
+            # areas: one file for each feature, equal to the files of `pbfcut areas` (also for two areas with a shared
+            # border, and for a plain Polygon file, which the page makes one area named after the file); areas that
+            # overlap stop the cut with the error of the library
             import json
             box = lambda w, s_, e, n: [[[w, s_], [e, s_], [e, n], [w, n], [w, s_]]]
             two = Path(tmp) / "two.geojson"
             two.write_text(json.dumps({"type": "FeatureCollection", "features": [
-                {"type": "Feature", "properties": {"name": "west"}, "geometry": {"type": "Polygon", "coordinates": box(7.40, 43.72, 7.425, 43.76)}},
-                {"type": "Feature", "properties": {"name": "east"}, "geometry": {"type": "Polygon", "coordinates": box(7.415, 43.72, 7.45, 43.76)}}]}))
+                {"type": "Feature", "properties": {"name": "west"}, "geometry": {"type": "Polygon", "coordinates": box(7.40, 43.72, 7.42, 43.76)}},
+                {"type": "Feature", "properties": {"name": "east"}, "geometry": {"type": "Polygon", "coordinates": box(7.42, 43.72, 7.45, 43.76)}}]}))
+            overlap = Path(tmp) / "overlap.geojson"
+            overlap.write_text(json.dumps({"type": "FeatureCollection", "features": [
+                {"type": "Feature", "properties": {"name": "A"}, "geometry": {"type": "Polygon", "coordinates": box(7.40, 43.72, 7.43, 43.76)}},
+                {"type": "Feature", "properties": {"name": "B"}, "geometry": {"type": "Polygon", "coordinates": box(7.42, 43.72, 7.45, 43.76)}}]}))
             plain = Path(tmp) / "plain.geojson"
             plain.write_text(json.dumps(json.load(open(AREA))["features"][0]["geometry"]))
             page.click("label[for=src-f]")
@@ -147,6 +152,12 @@ def main():
                 assert sorted(got) == sorted(want_a), f"areas: page {sorted(got)}, command line {sorted(want_a)}"
                 assert all(got[n] == want_a[n] for n in want_a), f"an area file of {areas_file.name} differs"
                 print(f"desktop, areas {Path(areas_file).name}: {sorted(got)} equal the command line;", page.text_content("#summary"))
+            page.set_input_files("#areas", str(overlap))
+            page.click("#start")
+            page.wait_for_selector("#error:not([hidden])", timeout=120000)
+            err = page.text_content("#error")
+            assert "overlap" in err and '"A"' in err and '"B"' in err, err
+            print("desktop, areas that overlap:", err)
 
             # H3 cells: the files equal the files of `pbfcut h3`
             want_h3 = cli_files(Path(tmp) / "h3", "h3", PBF, "--res", "9")

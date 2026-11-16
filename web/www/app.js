@@ -78,7 +78,7 @@ const HELP = {
   settings: ["Settings", [
     ["Tiles", "The square tiles of web maps. One file for each tile: z_x_y.osm.pbf."],
     ["H3 cells", "The hexagons of the H3 grid. One file for each cell, named with its H3 index."],
-    ["Areas", "No grid: one file for each feature of a GeoJSON FeatureCollection, named by its property \"name\". The areas can overlap. A file with one Polygon gives one area, named after the file."],
+    ["Areas", "No grid: one file for each feature of a GeoJSON FeatureCollection, named by its property \"name\". The areas must not overlap. A file with one Polygon gives one area, named after the file."],
     ["Zoom", "The size of a tile, at the equator. At latitude 60° a tile is half as wide and half as high."],
     ["Resolution", "The mean area of an H3 cell."],
     ["Border", "Each file also gets the data this many metres around its tile or cell."],
@@ -202,6 +202,9 @@ async function areasText(file) {
 
 // ---- 3. the cut and its progress
 $("start").addEventListener("click", async () => {
+  // the result and the message of the cut before go at once (the lines below wait)
+  $("result").hidden = true;
+  $("error").hidden = true;
   await cleaned;
   const boundary = $("boundary").files[0] ? await $("boundary").files[0].text() : null;
   const steps = STEPS[kind()];
