@@ -58,6 +58,7 @@ nav:
   - Reference:
       - The command line: reference/cli.md
       - Python: reference/python.md
+      - Rust: reference/rust.md
       - Boundary formats: reference/boundaries.md
   - Explanation:
       - The rules of the cut: explanation/rules.md
