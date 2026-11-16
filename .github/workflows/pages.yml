@@ -1,6 +1,6 @@
 name: Pages
 
-# The manual at https://khoshkhah.github.io/pbfcut/manual/. The online page comes to the root in M5 (docs/design.md).
+# The online page at https://khoshkhah.github.io/pbfcut/ (web/), and the manual at /pbfcut/manual/.
 on:
   push:
     branches: [main]
@@ -20,13 +20,30 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # nightly first: the last toolchain is the default, and stable must be the default
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly-2026-10-15
+          targets: wasm32-unknown-unknown
+          components: rust-src
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-bindgen@0.2.129
+      - uses: Swatinem/rust-cache@v2
+      - name: The online page (the WebAssembly modules, and the regions of Geofabrik)
+        run: REGIONS=1 ./web/build.sh
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - run: pip install "mkdocs==1.6.*" "mkdocs-material==9.*"
       - run: mkdocs build --strict --site-dir site/manual
-      - name: The root goes to the manual until the online page exists
-        run: echo '<!doctype html><meta charset="utf-8"><meta http-equiv="refresh" content="0; url=manual/"><title>pbfcut</title><a href="manual/">pbfcut manual</a>' > site/index.html
+      - name: The page at the root; ?v=<commit> on its references, because Pages keeps files in its cache for 10 minutes
+        run: |
+          cp -r web/www/. site/
+          sed -i "s/?v=dev/?v=${GITHUB_SHA::7}/g" site/index.html site/app.js site/worker.js
       - uses: actions/upload-pages-artifact@v3
         with:
           path: site
