@@ -3,6 +3,7 @@
 //! all its nodes, and the relations with a member there.
 
 pub mod boundary;
+pub mod cells;
 pub mod decode;
 pub mod elements;
 pub mod extract;

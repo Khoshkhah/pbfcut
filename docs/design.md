@@ -3,8 +3,9 @@
 This document is for developers. It gives the scope of pbfcut, its rules and the plan. The published manual does not
 include it.
 
-Status (2026-11-15): M1 and M1b are done: the crate, the commands `tiles` and `compare`, the golden tests, CI, the
-manual, and the memory budget. The next step is M2, H3 cells and GeoJSON areas.
+Status (2026-11-16): M1 and M1b are done: the crate, the commands `tiles` and `compare`, the golden tests, CI, the
+manual, and the memory budget. M2 has started: `pbfcut h3 --res R` (H3 cells of one resolution) is done. The list of
+cells of mixed resolutions (`--cells`) and the GeoJSON areas are not done.
 
 ## 1. Purpose
 
@@ -28,7 +29,8 @@ the area of each node in one compressed list for all areas.
 - Modules: `decode` (the PBF decoder), `write` (the PBF writer), `extract` (the cut of one area), `tilecut` (the cut
   of many areas), `tiles`, `boundary`, `store` (rows in temporary files, the sort on disk), `elements`, `util`.
 - Dependencies: `flate2` with `zlib-rs` and `miniz_oxide` (pure Rust, so every target writes the same bytes), `rayon`,
-  `serde_json`. M2 adds `h3o` (H3 in pure Rust, the same cell ids as the H3 library 4; it builds for wasm32).
+  `serde_json`, `h3o` (H3 in pure Rust, the same cell ids as the H3 library 4; it builds for wasm32; no `std` feature,
+  so its math is `libm` and the cells do not change with the target).
 - Natively, the temporary files go into a folder. In the browser, the page gives a `Store` (OPFS) with
   `store::set_temp_store`.
 - The output files are sorted by type, then by id (`Sort.Type_then_ID`), without metadata. The bytes do not depend on
@@ -54,8 +56,16 @@ the same book. Only the function "the areas of a point" changes:
 | Kind | The areas of a point | Overlap |
 |---|---|---|
 | Map tiles | `Tile::of` at the finest zoom of the list, then its parents. A point on the line between two tiles goes to the tile east or south of the line. | no |
-| H3 cells | `h3o` `LatLng::to_cell` at the finest resolution of the list, then its parents | no |
+| H3 cells | `h3o` `LatLng::to_cell` at the resolution of the list (one resolution; the parents for a mixed list are not done) | no |
 | GeoJSON areas | an index of the areas (a grid of their bounding boxes), then the point-in-polygon test of `Boundary` | yes |
+
+In the code, `tilecut::Grid` is "the areas of a point" for tiles and cells: the area of a point, the areas near a
+point (the border; for a cell, the six neighbours of ring 1, so the border must be less than half the edge of a cell),
+and the name of the file. The rest of the cut uses only the numbers of the areas. `cut_to_cells` and
+`cut_cells_to_sink` are the cell forms of `cut_to_tiles` and `cut_to_sink`. `h3o` builds with no `std` feature:
+its math is then `libm` (pure Rust), so the cell of a point does not change with the target. A cell list
+(`cells::cells`) comes from a flood fill over the cells that touch the box of the boundary, then the test
+`Boundary::touches_box` with the box of each cell.
 
 For H3 with mixed resolutions, a coarse cell holds the points whose fine cell has it as its parent. The H3 parent
 does not exactly cover its children, so the output of a coarse cell is the area of its children, not the hexagon of
@@ -133,11 +143,11 @@ pbfcut h3      IN.osm.pbf (--res R | --cells LIST.txt)  [OPTIONS] -o DIR     (M2
 pbfcut areas   IN.osm.pbf --geojson AREAS.geojson [--owned] [OPTIONS] -o DIR  (M2)
 pbfcut compare DIR_A DIR_B
 
-OPTIONS: [--boundary AREA.geojson] [--complete TYPES] [--steps] [--memory SIZE] [--temp DIR]
+OPTIONS: [--boundary AREA.geojson] [--border METRES] [--complete TYPES] [--steps] [--memory SIZE] [--temp DIR]
 ```
 
-- `h3 --res R`: all H3 cells of resolution `R` (0 to 15) that touch the boundary (no boundary: the bounding box of the
-  file). `--cells LIST.txt`: a list of cell ids, one on each line, also of different resolutions. Each file is
+- `h3 --res R` (done): all H3 cells of resolution `R` (0 to 15) that touch the boundary (no boundary: the bounding box
+  of the file). `--cells LIST.txt` (not done): a list of cell ids, one on each line, also of different resolutions. Each file is
   `DIR/<cell id>.osm.pbf`, for example `862b02d27ffffff.osm.pbf`.
 - `areas`: each feature of the GeoJSON (Polygon, MultiPolygon, or a `bbox` member) is one area and one output, as
   the extracts of `osmium extract -c`. The file name comes from the property `name` of the feature, else from its
@@ -182,7 +192,11 @@ command line.
 - Unit tests in each module.
 - Golden tests on Monaco (`tests/golden.rs`): the hash (FNV-1a 64) of each output file, after the header block, for
   five cuts: map tiles at zoom 14; zoom 15 with a 25 m border; the store at zoom 14; the store with zooms 14 and 15;
-  one area. The reference is `tests/golden/monaco.txt`. A golden file never changes to make a test pass. The bytes
+  one area. The reference is `tests/golden/monaco.txt`. The H3 cells of resolution 9, with no border and with a 25 m
+  border, are in `tests/golden/monaco_cells.txt` (`tests/cells.rs`). `tests/cells.rs` also compares each cell file of
+  resolution 8 (no boundary) with the cut of one area (`extract::cut_where`, the nodes of the cell) by `pbfcut
+  compare`. Inside a boundary the two cuts are different: the cut of many areas gives the ways at a node outside the
+  boundary to one "home" area. A golden file never changes to make a test pass. The bytes
   are equal on Linux x86-64 and on macOS arm64.
 - CI on every push and pull request: `cargo test --release`, the wasm32 build, the command line on Monaco, and
   `mkdocs build --strict`.

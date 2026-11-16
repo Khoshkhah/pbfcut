@@ -52,6 +52,7 @@ nav:
   - Home: index.md
   - Tutorials:
       - Cut a file into tiles: tutorials/cut-to-tiles.md
+      - Cut a file into H3 cells: tutorials/cut-to-h3-cells.md
       - Cut a file in your browser: tutorials/online-page.md
   - Reference:
       - The command line: reference/cli.md

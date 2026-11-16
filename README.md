@@ -1,12 +1,23 @@
 # pbfcut
 
-pbfcut cuts an OpenStreetMap `.osm.pbf` file into map tiles. It reads the file one time for all tiles, and each tile
-file is a complete `.osm.pbf` file:
+pbfcut cuts an OpenStreetMap `.osm.pbf` file into map tiles or H3 cells. It reads the file one time for all tiles or
+cells, and each output file is a complete `.osm.pbf` file. In this list, an area is a tile or a cell:
 
-- the nodes in the tile;
-- each way with a node in the tile, with all its nodes;
-- each relation with a member in the tile, with its parent relations;
-- each multipolygon and boundary relation with a member in the tile, with all its members.
+- the nodes in the area;
+- each way with a node in the area, with all its nodes;
+- each relation with a member in the area, with its parent relations;
+- each multipolygon and boundary relation with a member in the area, with all its members.
+
+| Command | Output |
+|---|---|
+| `pbfcut tiles IN.osm.pbf --zoom Z -o DIR` | `DIR/z_x_y.osm.pbf` for each map tile (Web Mercator) of zoom `Z` with data |
+| `pbfcut tiles IN.osm.pbf --tiles LIST.txt -o DIR` | the same, for a list of tiles, also of different zooms |
+| `pbfcut h3 IN.osm.pbf --res R -o DIR` | `DIR/<cell index>.osm.pbf` for each H3 cell of resolution `R` with data, for example `881eb4cb2dfffff.osm.pbf` |
+| `pbfcut compare DIR_A DIR_B` | exit code 1 if the elements of the files of the two folders are different |
+
+All cuts take `--boundary AREA.geojson` (only the nodes inside), `--border METRES` (also the ways with a node near the
+area), `--complete TYPES` and `--memory SIZE`. The H3 cells come from `h3o`, a pure-Rust H3 library with the cell ids
+of the H3 library 4.
 
 Sweden (975 MB) on a Mac mini (12 cores, 16 GB):
 
@@ -19,8 +30,10 @@ The same code builds for WebAssembly (`wasm32-unknown-unknown`). The online page
 installation: https://khoshkhah.github.io/pbfcut/ (source in `web/`). The command line is about 1.6 times faster than
 the online page (Sweden, zoom 8, 12 threads, Mac mini: 12.7 s against 19.8 s in Chromium).
 
-Planned: H3 cells of one resolution (`pbfcut h3 IN.osm.pbf --res 7`) or of mixed resolutions, GeoJSON areas that can
-overlap (as the extracts of `osmium extract -c`).
+The H3 cells of resolution 6 (21,618 files) take 94 s and 1.6 GB of heap; with `--memory 512M`, 180 s and 755 MB
+([Speed and memory](https://khoshkhah.github.io/pbfcut/manual/explanation/speed-and-memory/)).
+
+Planned: a list of H3 cells of mixed resolutions, GeoJSON areas that can overlap (as the extracts of `osmium extract -c`).
 
 ## Install and use
 
@@ -34,6 +47,7 @@ Download the `.osm.pbf` file of an area from Geofabrik (https://download.geofabr
 
 ```bash
 pbfcut tiles sweden-latest.osm.pbf --zoom 8 -o tiles/
+pbfcut h3 sweden-latest.osm.pbf --res 5 -o cells/
 ```
 
 On a computer with little memory, add `--memory 512M`: the cut then uses less memory and more time, and gives the same
@@ -49,6 +63,8 @@ The manual: https://khoshkhah.github.io/pbfcut/manual/ (source in `docs/`). The 
 pbfcut = { git = "https://github.com/Khoshkhah/pbfcut" }
 ```
 
-`pbfcut::tilecut::cut_to_tiles` writes the tile files into a folder. `pbfcut::extract::cut_to_pbf` cuts one area.
+`pbfcut::tilecut::cut_to_tiles` writes the tile files into a folder, and `pbfcut::tilecut::cut_to_cells` the cell
+files (the list of cells from `pbfcut::cells::cells`). `cut_to_sink` and `cut_cells_to_sink` give the same files to a
+function, for example in the browser. `pbfcut::extract::cut_to_pbf` cuts one area.
 
 MIT license.
