@@ -49,7 +49,7 @@ def open_page(browser, url, **ctx):
 
 
 def cut(page, threads=None):
-    page.fill("#zoom", "14")
+    page.select_option("#zoom", "14")
     if threads:
         page.fill("#threads", str(threads))
     page.click("#start")

@@ -32,6 +32,9 @@
   label { display: block; font-size: .8rem; color: var(--muted); margin-bottom: 4px; }
   input[type=number], input[list] { width: 100%; padding: 9px 11px; font: inherit; color: var(--text); background: var(--field);
     border: 1px solid transparent; border-radius: 9px; outline: none; }
+  select { width: 100%; padding: 9px 11px; font: inherit; color: var(--text); background: var(--field); border: 1px solid transparent;
+    border-radius: 9px; outline: none; }
+  select:focus { border-color: var(--accent); }
   input[type=number]:focus, input[list]:focus { border-color: var(--accent); background: var(--card); }
   input[type=file] { font: inherit; font-size: .85rem; color: var(--muted); max-width: 100%; }
   input[type=file]::file-selector-button { font: inherit; font-size: .85rem; padding: 6px 12px; margin-right: 10px; border-radius: 8px;
@@ -90,7 +93,8 @@
   dialog form { text-align: right; margin-top: 6px; }
   [hidden] { display: none !important; }
   @media (max-width: 560px) {
-    .grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .grid > div:first-child { grid-column: 1 / -1; }
     .stats { grid-template-columns: repeat(2, 1fr); }
     #start { flex: 1; }
     nav a { margin: 0 14px 0 0; }
@@ -128,18 +132,18 @@
 </section>
 
 <section class="card">
-  <h2>Settings <button type="button" class="help" data-help="kind" aria-label="Help">?</button></h2>
+  <h2>Settings <button type="button" class="help" data-help="settings" aria-label="Help">?</button></h2>
   <div class="switch">
     <input type="radio" name="kind" value="tiles" id="kind-t" checked><label for="kind-t">Tiles</label>
     <input type="radio" name="kind" value="area" id="kind-a"><label for="kind-a">One area</label>
   </div>
   <div class="grid">
-    <div data-kind="tiles"><label for="zoom">Zoom <button type="button" class="help" data-help="zoom" aria-label="Help">?</button></label><input id="zoom" type="number" min="0" max="16" value="8"></div>
-    <div data-kind="tiles"><label for="border">Border (m) <button type="button" class="help" data-help="border" aria-label="Help">?</button></label><input id="border" type="number" min="0" step="1" value="0"></div>
-    <div><label for="threads">Threads <button type="button" class="help" data-help="threads" aria-label="Help">?</button></label><input id="threads" type="number" min="1" max="64" value="4"></div>
+    <div data-kind="tiles"><label for="zoom">Zoom</label><select id="zoom"></select></div>
+    <div data-kind="tiles"><label for="border">Border (m)</label><input id="border" type="number" min="0" step="1" value="0"></div>
+    <div><label for="threads">Threads</label><input id="threads" type="number" min="1" max="64" value="4"></div>
   </div>
   <div class="row">
-    <label for="boundary" style="margin:0">Boundary <button type="button" class="help" data-help="boundary" aria-label="Help">?</button></label>
+    <label for="boundary" style="margin:0">Boundary</label>
     <input id="boundary" type="file" accept=".geojson,.json">
   </div>
   <p id="threads-hint" class="hint"></p>
