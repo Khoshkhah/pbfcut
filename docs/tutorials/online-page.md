@@ -14,7 +14,9 @@ folder. On a phone, the page downloads one file at a time.
     - **A region of Geofabrik**: type the name of the region, for example `Monaco`, and select it in the list.
       Then click one of the two buttons:
         - **Get** puts the file into the storage of the site, with its progress. The cut then uses it.
-        - **Download** saves the file on your computer. Then select it as a file on this computer.
+        - **Download** saves the file on your computer. In Chrome and Edge, a dialog asks where, and the file comes as
+          fast as with Get; other browsers download it directly from Geofabrik, which is slower. Then select it as a
+          file on this computer.
 
         Geofabrik does not let other web pages read its files (it sends no CORS headers). Thus **Get** gets the file
         through a relay: a small Cloudflare Worker that accepts only files of download.geofabrik.de. The page gets the file in
