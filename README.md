@@ -3,12 +3,11 @@
 <p align="center">Cut an OpenStreetMap <code>.osm.pbf</code> file into map tiles, H3 cells or a list of areas, in one read of the file.</p>
 
 <p align="center">
-  <a href="https://khoshkhah.github.io/pbfcut/">Online page</a> ·
-  <a href="https://khoshkhah.github.io/pbfcut/manual/">Documentation</a> ·
-  <a href="https://khoshkhah.github.io/pbfcut/manual/explanation/comparison/">Comparison</a>
-  <br>
-  <a href="https://github.com/Khoshkhah/pbfcut/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/Khoshkhah/pbfcut/actions/workflows/ci.yml/badge.svg"></a>
-  <img alt="MIT license" src="https://img.shields.io/badge/license-MIT-blue">
+  <a href="https://khoshkhah.github.io/pbfcut/"><img alt="Online page" src="https://img.shields.io/badge/online_page-try_it-2563eb?style=flat-square"></a>
+  <a href="https://khoshkhah.github.io/pbfcut/manual/"><img alt="Documentation" src="https://img.shields.io/badge/documentation-manual-2563eb?style=flat-square"></a>
+  <a href="https://khoshkhah.github.io/pbfcut/manual/explanation/comparison/"><img alt="Comparison" src="https://img.shields.io/badge/comparison-osmium-2563eb?style=flat-square"></a>
+  <a href="https://github.com/Khoshkhah/pbfcut/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/Khoshkhah/pbfcut/ci.yml?branch=main&label=CI&style=flat-square"></a>
+  <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-555?style=flat-square"></a>
 </p>
 
 - **Fast, with little memory.** pbfcut is faster than `osmium extract` and uses much less memory, also for hundreds of
