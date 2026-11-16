@@ -54,10 +54,10 @@ $("theme").addEventListener("click", () => {
   try { localStorage.setItem("theme", document.documentElement.dataset.theme); } catch {}
 });
 
-// ---- the zoom list: each zoom with the width of its tiles at the equator
+// ---- the zoom list: each zoom with the size of its tiles (a square) at the equator
 for (let z = 2; z <= 16; z++) {
-  const km = 40075 / 2 ** z;
-  $("zoom").append(new Option(`${z} · ${km >= 10 ? Math.round(km) : km.toFixed(1)} km`, z, false, z === 8));
+  const km = 40075 / 2 ** z, w = km >= 10 ? Math.round(km) : km.toFixed(1);
+  $("zoom").append(new Option(`${z} · ${w} × ${w} km`, z, false, z === 8));
 }
 
 // ---- the help popups (the buttons "?")
@@ -66,7 +66,7 @@ const HELP = {
     "Get puts the region file into the storage of this site, through a relay (Geofabrik does not let other web pages read its files). Download saves the file on your computer."],
   settings: ["Settings",
     "Tiles: one file for each map tile of a zoom. One area: one file with the data inside the boundary.",
-    "Zoom: the size of the tiles. The km value is the width of a tile at the equator; at latitude 60° a tile is half as wide.",
+    "Zoom: the size of the tiles. A tile is a square: its size is given at the equator. At latitude 60° a tile is half as wide and half as high.",
     "Border: each tile file also gets the data in this border around its tile, in metres.",
     "Threads: the number of threads of the cut (default: the cores of this computer). Without cross-origin isolation the cut uses one thread.",
     "Boundary: a GeoJSON Polygon or MultiPolygon. Tiles: optional (without it, the tiles cover the bounding box of the file). One area: necessary."],
