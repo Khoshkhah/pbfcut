@@ -40,6 +40,17 @@ python3 web/serve.py 8800                             # no COOP/COEP headers, as
 python3 web/e2e.py [--relay]                          # Playwright, desktop and phone, on Monaco (needs cargo build --release)
 ```
 
+## Python binding
+
+`python/` is the crate `pbfcut-py` (PyO3, maturin, abi3 for Python 3.9 and later). It only converts arguments and results; all logic stays in `pbfcut::job`. Build and test:
+
+```bash
+maturin build --release -m python/Cargo.toml -o dist && pip install dist/pbfcut-*.whl
+PBFCUT_BIN=target/release/pbfcut pytest python/tests      # the Python results equal the command line
+```
+
+`.github/workflows/python.yml` builds and tests the wheels, and publishes them to PyPI on a tag `v*` (trusted publishing). The tag must equal the version in `python/Cargo.toml`.
+
 ## Golden tests
 
 `tests/golden.rs` compares the output with the hashes of the reference files (`tests/golden/monaco.txt`, from pbfcut 11276bc). `tests/cells.rs` does the same for the H3 cells (`tests/golden/monaco_cells.txt`). The input is `tests/data/monaco.osm.pbf`. The hash covers the blocks after the header block, because the header names the program.
@@ -58,6 +69,7 @@ The library (`src/lib.rs`) has one module for each job. The command in `src/main
 - `cells`: the H3 cells (`h3o`, no `std` feature, so `libm` math): `cell_of`, `cells(boundary, res)`, `near_cell`.
 - `extract`: the cut of one area (`cut_to_pbf`, `cut_where`) in four passes. The input must be sorted by type, then id (as the files of Geofabrik).
 - `tilecut` (and `tilecut/write.rs`): the cut to many tiles. It is the largest module. It reads the file two times. Read 1 only makes a plan. Read 2 writes each element straight into the files of its tiles. The cut keeps the tile of each node in memory as compressed runs of ids (`Book`). `Grid` is the only part that knows tiles from cells (the area of a point, the border, the file name). `cut_to_tiles`, `cut_to_cells` and `cut_to_areas` write files to a folder. For an area list, the number of a node in the book can be a set of areas (`Grid::Areas`, `Grid::each`). `cut_to_store` and `cut_to_sink` keep the tile files in a temporary store.
+- `job`: the jobs of the command: `cut` (one cut to a folder, with the file names and the counts) and `compare`. The command and the Python binding call it.
 - `store`: rows in temporary files, with an external sort that has a memory budget. The large lists of the cut live here, so they do not stay in memory.
 
 ## Rules that are easy to break
