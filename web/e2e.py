@@ -114,6 +114,14 @@ def main():
             # the phone: the cut, one file downloaded, no horizontal scroll
             phone = open_page(browser, url, viewport={"width": 390, "height": 844}, is_mobile=True, has_touch=True,
                               device_scale_factor=3)
+            # a region: the buttons Get and Download; with no relay, Get is disabled and says why
+            phone.fill("#region", "Europe / Monaco")
+            phone.dispatch_event("#region", "input")
+            phone.wait_for_function("document.querySelector('#get-text').textContent.includes('no relay')")
+            assert phone.is_disabled("#get") and phone.is_visible("#link")
+            assert phone.get_attribute("#link", "href").startswith("https://download.geofabrik.de/europe/monaco")
+            if shots:
+                phone.screenshot(path=shots / "phone-region.png")
             phone.check("input[value=file]")
             phone.set_input_files("#file", str(PBF))
             phone.set_input_files("#boundary", str(AREA))     # this test file has no bounding box in its header

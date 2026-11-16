@@ -32,7 +32,8 @@
   .tabs label { font-weight: 500; display: flex; gap: 6px; align-items: center; margin: 0; }
   button { font: inherit; padding: 8px 16px; border-radius: 6px; border: 1px solid var(--accent); background: var(--accent);
     color: var(--card); cursor: pointer; }
-  button.secondary { background: transparent; color: var(--accent); }
+  a.button { display: inline-block; text-decoration: none; padding: 8px 16px; border-radius: 6px; border: 1px solid var(--accent); }
+  button.secondary, a.button.secondary { background: transparent; color: var(--accent); }
   button:disabled { opacity: .45; cursor: default; }
   .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
   progress { width: 100%; max-width: 420px; }
@@ -72,14 +73,15 @@
     <input id="region" list="regions" placeholder="Type to search, for example Monaco" autocomplete="off">
     <datalist id="regions"></datalist>
     <p class="hint">The list of <a href="https://download.geofabrik.de/">download.geofabrik.de</a>.</p>
-    <div id="region-get" hidden>
-      <div class="row"><button id="get" type="button">Get the file</button> <span id="get-text" class="hint"></span></div>
+    <div id="region-actions" hidden>
+      <div class="row">
+        <button id="get" type="button">Get</button>
+        <a id="link" class="button secondary" href="#">Download</a>
+      </div>
+      <p class="hint"><b>Get</b> puts the file into the storage of this site, and the cut uses it.
+        <b>Download</b> saves the file on your computer: then select it in "A file on this computer".</p>
+      <p id="get-text" class="hint"></p>
       <progress id="get-bar" max="1" value="0" hidden></progress>
-    </div>
-    <div id="region-link" hidden>
-      <p class="hint">Geofabrik does not let other web pages read its files (no CORS headers). Download the file with this
-        link, then select it in "A file on this computer":</p>
-      <p><a id="link" href="#"></a></p>
     </div>
   </div>
   <div id="src-file" hidden>

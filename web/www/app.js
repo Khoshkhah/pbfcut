@@ -47,19 +47,21 @@ fetch("regions.json?v=dev").then((r) => r.json()).then((list) => {
 $("region").addEventListener("input", async () => {
   region = regions.find((x) => x.label === $("region").value) ?? null;
   regionReady = false;
-  $("region-get").hidden = !(region && relay);
-  $("region-link").hidden = !(region && !relay);
+  $("region-actions").hidden = !region;
   if (region) {
     await cleaned;
     $("link").href = region.pbf;
-    $("link").textContent = region.pbf.split("/").pop();
-    $("get-text").textContent = "";
+    $("link").title = region.pbf.split("/").pop();
+    // Geofabrik sends no CORS headers: a web page can read its files only through a relay
+    $("get").disabled = !relay;
+    $("get-text").textContent = relay ? "" : "Get is not available: Geofabrik does not let other web pages read its files "
+      + "(it sends no CORS headers), and this page has no relay. Use Download.";
     const kept = await (await regionsDir()).getFileHandle(fileName(region.id)).then((h) => h.getFile(), () => null);
     if (kept) {
       regionReady = true;
       $("get-text").textContent = `The file is in the storage of this site (${mib(kept.size)}).`;
       $("get").textContent = "Get it again";
-    } else $("get").textContent = "Get the file";
+    } else $("get").textContent = "Get";
   }
   ready();
 });

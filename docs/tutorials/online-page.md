@@ -12,8 +12,12 @@ folder. On a phone, the page downloads one file at a time.
 1. Open <https://khoshkhah.github.io/pbfcut/>.
 2. Select the input file:
     - **A region of Geofabrik**: type the name of the region, for example `Monaco`, and select it in the list.
-      Geofabrik does not let other web pages read its files (it sends no CORS headers). Thus, click the link to
-      download the file, then do the next step with the downloaded file.
+      Then click one of the two buttons:
+        - **Get** puts the file into the storage of the site, with its progress. The cut then uses it.
+        - **Download** saves the file on your computer. Then select it as a file on this computer.
+
+        Geofabrik does not let other web pages read its files (it sends no CORS headers), so **Get** needs a relay.
+        The page has no public relay now: **Get** is not available, and the page says so.
     - **A file on this computer**: select the `.osm.pbf` file.
 3. Set the settings:
     - **Zoom**: the zoom of the tiles (default 8).
