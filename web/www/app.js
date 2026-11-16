@@ -2,12 +2,25 @@
 // the tile files. The tile files stay in one OPFS file ("cut/tiles"); `parts` says where each file is in it.
 
 const $ = (id) => document.getElementById(id);
-const STEPS = [
-  ["1", "Read 1: the nodes inside"], ["2", "Read 1: the ways"],
-  ["3a", "the members of the relations"], ["3b", "the members in the file"], ["3c", "the tiles of the relations"],
-  ["3d", "the members of the multipolygons"], ["4", "the nodes from outside"],
-  ["5a", "Read 2: the nodes to the tiles"], ["5d", "Read 2: the ways to the tiles"], ["5e", "Read 2: the relations, and the tile files"],
-];
+// the steps of each kind of cut, in their order: the library names each step at its end
+const STEPS = {
+  tiles: [
+    ["1", "Read 1: the nodes inside"], ["2", "Read 1: the ways"],
+    ["3a", "the members of the relations"], ["3b", "the members in the file"], ["3c", "the tiles of the relations"],
+    ["3d", "the members of the multipolygons"], ["4", "the nodes from outside"],
+    ["5a", "Read 2: the nodes to the tiles"], ["5d", "Read 2: the ways to the tiles"], ["5e", "Read 2: the relations, and the tile files"],
+  ],
+  area: [
+    ["1", "the nodes inside"], ["2", "the ways and relations"], ["3", "the relations, the member ways"],
+    ["4", "write the nodes"], ["5", "write the ways and relations"],
+  ],
+};
+const kind = () => document.querySelector("input[name=kind]:checked").value;
+for (const r of document.querySelectorAll("input[name=kind]")) r.addEventListener("change", () => {
+  for (const e of document.querySelectorAll("[data-kind]")) e.hidden = !e.dataset.kind.split(" ").includes(kind());
+  ready();
+});
+$("boundary").addEventListener("change", ready);
 // The relay: a Cloudflare Worker of the owner that sends Geofabrik's files with CORS headers (Geofabrik sends none).
 // It accepts only files of download.geofabrik.de and only some origins. ?relay=<address> gives another relay
 // (serve.py has one: ?relay=relay).
@@ -115,7 +128,8 @@ $("threads").disabled = !isolated;
 $("threads-hint").textContent = isolated ? "" : "This page is not cross-origin isolated, so the cut uses one thread.";
 
 function ready() {
-  const ok = source() === "file" ? $("file").files.length > 0 : regionReady;
+  const ok = (source() === "file" ? $("file").files.length > 0 : regionReady)
+    && (kind() !== "area" || $("boundary").files.length > 0);     // one area needs its boundary
   $("start").disabled = !ok || !!worker;
 }
 
@@ -123,7 +137,9 @@ function ready() {
 $("start").addEventListener("click", async () => {
   await cleaned;
   const boundary = $("boundary").files[0] ? await $("boundary").files[0].text() : null;
+  const steps = STEPS[kind()];
   const msg = {
+    kind: kind(), name: ($("boundary").files[0]?.name.replace(/\.(geo)?json$/i, "") || "area") + ".osm.pbf",
     zoom: Number($("zoom").value), border: Number($("border").value) || 0, threads: Number($("threads").value) || 1,
     boundary, complete: "multipolygon,boundary",
     ...(source() === "file" ? { file: $("file").files[0] } : { region: fileName(region.id) }),
@@ -132,7 +148,7 @@ $("start").addEventListener("click", async () => {
   $("bar").style.width = "0";
   $("result").hidden = true;
   $("error").hidden = true;
-  $("steps").replaceChildren(...STEPS.map(([id, label]) => {
+  $("steps").replaceChildren(...steps.map(([id, label]) => {
     const li = document.createElement("li");
     li.dataset.step = id;
     li.innerHTML = `<span>${id}</span><b></b><span class="t"></span>`;
@@ -154,8 +170,9 @@ $("start").addEventListener("click", async () => {
   used();
   const storage = setInterval(used, 1000);
   const end = () => { clearInterval(timer); clearInterval(storage); used(); worker?.terminate(); worker = null; $("stop").disabled = true; ready(); };
-  const mark = (id) => {
-    const li = $("steps").querySelector(`[data-step="${id}"]`);
+  // a step message ends the first step that is not done
+  const mark = () => {
+    const li = $("steps").querySelector("li:not(.done)");
     for (const x of $("steps").children) x.classList.remove("run");
     li?.nextElementSibling?.classList.add("run");
     return li;
@@ -164,23 +181,23 @@ $("start").addEventListener("click", async () => {
   worker.onmessage = ({ data: m }) => {
     if (m.type === "stage") {
       $("stage").textContent = m.name;
-      if (m.name === "cut") { lastT = m.t; $("steps").firstElementChild.classList.add("run"); $("stage").textContent = STEPS[0][1]; }
+      if (m.name === "cut") { lastT = m.t; $("steps").firstElementChild.classList.add("run"); $("stage").textContent = steps[0][1]; }
     } else if (m.type === "memory") {
       shared = m.memory;
       show(m.bytes);
     } else if (m.type === "step") {
       if (m.memory) show(m.memory);
       if (m.name.startsWith("panic:")) { panic = m.name; return; }
-      const [, id, text] = m.name.match(/^tile cut (\w+): (.*)$/) ?? [];
-      const li = id && mark(id);
+      const text = m.name.replace(/^[^:]*: /, "");
+      const li = mark();
       if (li) {
         li.classList.add("done");
-        $("bar").style.width = `${(100 * $("steps").querySelectorAll(".done").length) / STEPS.length}%`;
+        $("bar").style.width = `${(100 * $("steps").querySelectorAll(".done").length) / steps.length}%`;
         li.querySelector("b").textContent = text.replace(/ \(.*$/, "");
         li.title = text;
         li.querySelector(".t").textContent = `${((m.t - lastT) / 1000).toFixed(2)} s`;
         lastT = m.t;
-        const next = STEPS[STEPS.findIndex((s) => s[0] === id) + 1];
+        const next = steps[[...$("steps").children].indexOf(li) + 1];
         $("stage").textContent = next ? next[1] : "the end";
       }
     } else if (m.type === "done") {
@@ -214,7 +231,9 @@ async function result({ report, parts, bytes }) {
   files.forEach((f) => { f.size = f.parts.reduce((s, p) => s + p[1], 0); });
   saved = { all, files };
   $("result").hidden = false;
-  $("summary").textContent = `${files.length} tile files (${mib(bytes)}) of ${report.tiles} tiles at zoom ${$("zoom").value}, in ${report.seconds.toFixed(1)} s.`;
+  $("summary").textContent = kind() === "area"
+    ? `One area file (${mib(bytes)}), in ${report.seconds.toFixed(1)} s.`
+    : `${files.length} tile files (${mib(bytes)}) of ${report.tiles} tiles at zoom ${$("zoom").value}, in ${report.seconds.toFixed(1)} s.`;
   const MAX = 1000;
   $("files").replaceChildren(...files.slice(0, MAX).map((f) => {
     const tr = document.createElement("tr");

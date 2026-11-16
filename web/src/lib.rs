@@ -138,12 +138,8 @@ fn on_step(name: &str) {
     let _ = step(name);
 }
 
-/// Cut the input file (`size` bytes) into the tiles of `zoom` inside `boundary` (GeoJSON; none: the bounding box in
-/// the header of the file). `border_m`: the border of each tile in metres. `complete`: the types of the relations to
-/// complete, separated by commas. `memory_mib`: the memory budget of the cut (0: the default of the library). The tile
-/// files go to `pbfcut.tile_write`. Gives the JSON report of the command `pbfcut tiles`, with the number of each tile.
-#[wasm_bindgen]
-pub fn cut(size: f64, zoom: u8, boundary: Option<String>, border_m: f64, complete: &str, memory_mib: u32) -> Result<String, JsValue> {
+/// The hooks of a cut (the steps, a panic, the temporary files in OPFS), and the opener of the input file.
+fn setup(size: f64, memory_mib: u32) -> impl Fn() -> Result<io::BufReader<Input>, String> {
     std::panic::set_hook(Box::new(|p| on_step(&format!("panic: {p}"))));
     let _ = pbfcut::util::STEP_HOOK.set(on_step);
     pbfcut::store::set_temp_store(Some(std::rc::Rc::new(|| Box::new(Opfs) as Box<dyn Store>)));
@@ -151,7 +147,48 @@ pub fn cut(size: f64, zoom: u8, boundary: Option<String>, border_m: f64, complet
         pbfcut::store::set_memory((memory_mib as usize) << 20);
     }
     let len = size as u64;
-    let open = || Ok(io::BufReader::with_capacity(4 << 20, Input { pos: 0, len }));
+    move || Ok(io::BufReader::with_capacity(4 << 20, Input { pos: 0, len }))
+}
+
+/// The output file of [`cut_area`]: its bytes go to `pbfcut.tile_write` as file 0.
+struct AreaFile;
+
+impl Write for AreaFile {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        tile_write(0, buf).map_err(io_err)?;
+        Ok(buf.len())
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+/// Cut the input file (`size` bytes) to one area, `boundary` (GeoJSON), as `pbfcut::extract::cut_to_pbf`: one
+/// `.osm.pbf` file named `name`. Gives the JSON report of [`cut`], with one file.
+#[wasm_bindgen]
+pub fn cut_area(size: f64, boundary: &str, name: &str, memory_mib: u32) -> Result<String, JsValue> {
+    let open = setup(size, memory_mib);
+    let area = Boundary::parse(boundary)?;
+    let started = js_sys_now();
+    let (w, c) = pbfcut::extract::cut_to_pbf(open, &area, io::BufWriter::with_capacity(1 << 20, AreaFile))?;
+    w.into_inner().map_err(|e| format!("the area file in OPFS: {e}"))?;
+    Ok(format!(
+        r#"{{"tiles":1,"files":[{{"index":0,"tile":"area","file":"{}","nodes":{},"ways":{},"relations":{}}}],"seconds":{}}}"#,
+        name.replace(['"', '\\', '/'], "_"),
+        c.nodes,
+        c.ways,
+        c.relations,
+        (js_sys_now() - started) / 1000.0
+    ))
+}
+
+/// Cut the input file (`size` bytes) into the tiles of `zoom` inside `boundary` (GeoJSON; none: the bounding box in
+/// the header of the file). `border_m`: the border of each tile in metres. `complete`: the types of the relations to
+/// complete, separated by commas. `memory_mib`: the memory budget of the cut (0: the default of the library). The tile
+/// files go to `pbfcut.tile_write`. Gives the JSON report of the command `pbfcut tiles`, with the number of each tile.
+#[wasm_bindgen]
+pub fn cut(size: f64, zoom: u8, boundary: Option<String>, border_m: f64, complete: &str, memory_mib: u32) -> Result<String, JsValue> {
+    let open = setup(size, memory_mib);
     let area = match &boundary {
         Some(b) => Boundary::parse(b)?,
         None => {

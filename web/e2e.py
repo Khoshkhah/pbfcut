@@ -111,6 +111,20 @@ def main():
             if shots:
                 page.screenshot(path=shots / "desktop.png", full_page=True)
 
+            # one area: one file inside the boundary
+            page.click("label[for=src-f]")
+            page.set_input_files("#file", str(PBF))
+            page.click("label[for=kind-a]")
+            assert page.is_disabled("#start"), "one area needs a boundary"
+            page.set_input_files("#boundary", str(AREA))
+            page.click("#start")
+            page.wait_for_selector("#result:not([hidden]), #error:not([hidden])", timeout=120000)
+            assert not page.locator("#error").is_visible(), page.text_content("#error")
+            assert page.locator("#steps li.done").count() == 5
+            assert page.text_content("#files tr:first-child td:first-child") == "monaco.osm.pbf"
+            assert int(page.text_content("#files tr:first-child td:nth-child(2)")) > 30000
+            print("desktop, one area:", page.text_content("#summary"))
+
             # the phone: the cut, one file downloaded, no horizontal scroll
             phone = open_page(browser, url, viewport={"width": 390, "height": 844}, is_mobile=True, has_touch=True,
                               device_scale_factor=3)
