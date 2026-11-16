@@ -15,6 +15,13 @@ You must have Rust and its package manager Cargo. To install them, follow the st
     cargo install --git https://github.com/Khoshkhah/pbfcut
     ```
 
+    Cargo puts the command `pbfcut` in `~/.cargo/bin`. Open a new terminal after the installation. If the shell says
+    `pbfcut: command not found`, add this folder to `PATH`:
+
+    ```bash
+    export PATH="$HOME/.cargo/bin:$PATH"     # add this line to ~/.bashrc or ~/.zshrc
+    ```
+
 2. Download the data of an area from Geofabrik (https://download.geofabrik.de). This tutorial uses Monaco, a file of
    about 0.7 MB:
 

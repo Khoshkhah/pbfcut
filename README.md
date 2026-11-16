@@ -26,6 +26,13 @@ You must have Rust (https://rustup.rs):
 cargo install --git https://github.com/Khoshkhah/pbfcut
 ```
 
+Cargo puts the command `pbfcut` in `~/.cargo/bin`. The installer of Rust (rustup) adds this folder to `PATH`. Open a new
+terminal after the installation. If the shell says `pbfcut: command not found`, add the folder to `PATH`:
+
+```bash
+export PATH="$HOME/.cargo/bin:$PATH"     # add this line to ~/.bashrc or ~/.zshrc
+```
+
 ## Use
 
 Download a region from Geofabrik (https://download.geofabrik.de), then cut it:
