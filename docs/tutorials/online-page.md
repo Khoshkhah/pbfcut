@@ -24,14 +24,15 @@ folder. On a phone, the page downloads one file at a time.
       example `8_136_74.osm.pbf`.
     - **H3 cells**: the hexagons of the H3 grid. Each resolution more makes the cells 7 times smaller. One file for
       each cell, with the H3 index as its name, for example `872b02d27ffffff.osm.pbf`.
-    - **One area**: one file with the data inside the boundary. A boundary is necessary.
+    - **Areas**: no grid. One file for each feature of a GeoJSON FeatureCollection, named by its property `name`
+      (as `pbfcut areas`). The areas can overlap. A file with one Polygon gives one area, named after the file.
 4. Set the settings:
     - **Zoom** (tiles) or **Resolution** (H3 cells): the size of the tiles or cells. The list shows the size of each.
     - **Border (m)**: each tile file also gets the data in this border around the tile (default 0).
     - **Threads**: the number of threads of the cut. The default is the number of cores of the computer.
-    - **Boundary** (optional for tiles and cells, necessary for one area): a GeoJSON file in longitude and latitude
-      (WGS 84) with a Polygon, a MultiPolygon, a Feature or a FeatureCollection. All its polygons together are the
-      area. With no boundary, the tiles or cells cover the bounding box in the header of the file.
+    - **Boundary** (optional): a file in longitude and latitude (WGS 84): GeoJSON (a Polygon, a MultiPolygon, a
+      Feature or a FeatureCollection), an osmosis `.poly` file, or WKT. All its polygons together are the area. With
+      no boundary, the tiles or cells cover the bounding box in the header of the file.
 5. Click **Cut**. The page shows the time, the step, the WebAssembly memory and the storage of the site. Each step
    of the cut gets a check mark and its time. **Stop** stops the cut.
 6. Click **Save all to a folder**, and select a folder. The page writes one file for each tile, for example

@@ -119,19 +119,34 @@ def main():
             if shots:
                 page.screenshot(path=shots / "desktop.png", full_page=True)
 
-            # one area: one file inside the boundary
+            # areas: one file for each feature, equal to the files of `pbfcut areas` (also for overlapping areas, and
+            # for a plain Polygon file, which the page makes one area named after the file)
+            import json
+            box = lambda w, s_, e, n: [[[w, s_], [e, s_], [e, n], [w, n], [w, s_]]]
+            two = Path(tmp) / "two.geojson"
+            two.write_text(json.dumps({"type": "FeatureCollection", "features": [
+                {"type": "Feature", "properties": {"name": "west"}, "geometry": {"type": "Polygon", "coordinates": box(7.40, 43.72, 7.425, 43.76)}},
+                {"type": "Feature", "properties": {"name": "east"}, "geometry": {"type": "Polygon", "coordinates": box(7.415, 43.72, 7.45, 43.76)}}]}))
+            plain = Path(tmp) / "plain.geojson"
+            plain.write_text(json.dumps(json.load(open(AREA))["features"][0]["geometry"]))
             page.click("label[for=src-f]")
             page.set_input_files("#file", str(PBF))
-            page.click("label[for=kind-a]")
-            assert page.is_disabled("#start"), "one area needs a boundary"
             page.set_input_files("#boundary", str(AREA))
-            page.click("#start")
-            page.wait_for_selector("#result:not([hidden]), #error:not([hidden])", timeout=120000)
-            assert not page.locator("#error").is_visible(), page.text_content("#error")
-            assert page.locator("#steps li.done").count() == 5
-            assert page.text_content("#files tr:first-child td:first-child") == "monaco.osm.pbf"
-            assert int(page.text_content("#files tr:first-child td:nth-child(2)")) > 30000
-            print("desktop, one area:", page.text_content("#summary"))
+            page.click("label[for=kind-a]")
+            assert page.is_disabled("#start"), "the areas need their file"
+            for areas_file, want_dir in [(AREA, "a1"), (two, "a2"), (plain, None)]:
+                page.set_input_files("#areas", str(areas_file))
+                page.click("#start")
+                page.wait_for_selector("#result:not([hidden]), #error:not([hidden])", timeout=120000)
+                assert not page.locator("#error").is_visible(), page.text_content("#error")
+                got = save_all(page)
+                if want_dir:
+                    want_a = cli_files(Path(tmp) / want_dir, "areas", PBF, "--areas", str(areas_file))
+                else:     # the plain Polygon: the same area as Monaco, named after the file
+                    want_a = {"plain.osm.pbf": cli_files(Path(tmp) / "a1", "areas", PBF, "--areas", str(AREA))["Monaco.osm.pbf"]}
+                assert sorted(got) == sorted(want_a), f"areas: page {sorted(got)}, command line {sorted(want_a)}"
+                assert all(got[n] == want_a[n] for n in want_a), f"an area file of {areas_file.name} differs"
+                print(f"desktop, areas {Path(areas_file).name}: {sorted(got)} equal the command line;", page.text_content("#summary"))
 
             # H3 cells: the files equal the files of `pbfcut h3`
             want_h3 = cli_files(Path(tmp) / "h3", "h3", PBF, "--res", "9")

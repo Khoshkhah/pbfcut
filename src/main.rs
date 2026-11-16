@@ -2,13 +2,15 @@
 //!
 //!   pbfcut tiles IN.osm.pbf (--zoom Z | --tiles LIST.txt) [OPTIONS] -o DIR
 //!   pbfcut h3 IN.osm.pbf --res R [OPTIONS] -o DIR
+//!   pbfcut areas IN.osm.pbf --areas AREAS.geojson|CONFIG.json [--name PROPERTY] [OPTIONS] [-o DIR]
 //!   pbfcut compare DIR_A DIR_B
 
 use pbfcut::boundary::{Boundary, WORLD};
 use pbfcut::decode::{decode_block, read_block, Buffers};
 use pbfcut::elements::{MemberType, RawSink};
 use pbfcut::cells::{cells, Resolution};
-use pbfcut::tilecut::{cut_to_cells, cut_to_tiles};
+use pbfcut::areas::AreaList;
+use pbfcut::tilecut::{cut_to_areas, cut_to_cells, cut_to_tiles};
 use pbfcut::tiles::{tiles, Tile};
 use std::collections::BTreeSet;
 use std::fs::File;
@@ -18,14 +20,15 @@ use std::time::Instant;
 const USAGE: &str = "usage:
   pbfcut tiles IN.osm.pbf (--zoom Z | --tiles LIST.txt) [OPTIONS] -o DIR
   pbfcut h3 IN.osm.pbf --res R [OPTIONS] -o DIR
+  pbfcut areas IN.osm.pbf --areas AREAS.geojson|CONFIG.json [--name PROPERTY] [OPTIONS] [-o DIR]
   pbfcut compare DIR_A DIR_B
-OPTIONS: [--boundary AREA.geojson] [--border METRES] [--complete TYPES] [--memory SIZE] [--temp DIR] [--steps]";
+OPTIONS: [--boundary FILE | --bbox W,S,E,N] [--border METRES] [--complete TYPES] [--memory SIZE] [--temp DIR] [--steps]
+  FILE: GeoJSON, an osmosis .poly file or WKT; --border: tiles and h3 only";
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let r = match args.first().map(String::as_str) {
-        Some("tiles") => cut(&args[1..], false),
-        Some("h3") => cut(&args[1..], true),
+        Some(kind @ ("tiles" | "h3" | "areas")) => cut(&args[1..], kind),
         Some("compare") if args.len() == 3 => compare(Path::new(&args[1]), Path::new(&args[2])),
         _ => Err(USAGE.to_string()),
     };
@@ -89,25 +92,46 @@ fn tile_list(text: &str) -> Result<Vec<Tile>, String> {
 }
 
 /// `tiles` (`cells_cut` false) or `h3`.
-fn cut(args: &[String], cells_cut: bool) -> Result<(), String> {
+/// The boundary of `--boundary FILE` or `--bbox W,S,E,N`, if the arguments have one.
+fn boundary(args: &[String]) -> Result<Option<Boundary>, String> {
+    match (opt(args, "--boundary"), opt(args, "--bbox")) {
+        (Some(p), None) => Boundary::parse(&read(p)?).map_err(|e| format!("{p}: {e}")).map(Some),
+        (None, Some(b)) => Boundary::from_box(b).map(Some),
+        (None, None) => Ok(None),
+        _ => Err("give --boundary or --bbox, not the two".into()),
+    }
+}
+
+/// The list of `--areas`: a GeoJSON FeatureCollection or an osmium config. A file that the config names is relative to
+/// the config.
+fn area_list(args: &[String]) -> Result<AreaList, String> {
+    let path = opt(args, "--areas").ok_or(format!("give --areas\n{USAGE}"))?;
+    let base = Path::new(path).parent().unwrap_or(Path::new(""));
+    AreaList::parse(&read(path)?, opt(args, "--name").unwrap_or("name"), &|f| read(&base.join(f).to_string_lossy()))
+        .map_err(|e| format!("{path}: {e}"))
+}
+
+/// `tiles`, `h3` or `areas` (`kind`).
+fn cut(args: &[String], kind: &str) -> Result<(), String> {
     let input = args.first().filter(|a| !a.starts_with("--")).ok_or(USAGE)?;
-    let out = PathBuf::from(opt(args, "-o").ok_or(USAGE)?);
-    let boundary = Boundary::parse(&match opt(args, "--boundary") {
-        Some(p) => read(p)?,
-        None => WORLD.to_string(),
-    })?;
+    let areas = if kind == "areas" { Some(area_list(args)?) } else { None };
+    // an osmium config can give the output folder
+    let out = PathBuf::from(opt(args, "-o").or(areas.as_ref().and_then(|a| a.directory.as_deref())).ok_or(USAGE)?);
+    let given = boundary(args)?;
+    let has_boundary = given.is_some();
+    let boundary = given.map_or_else(|| Boundary::parse(WORLD), Ok)?;
     // the area of the list of a zoom or a resolution: the boundary, else the bounding box in the header of the file
     let header_box = || -> Result<Option<Boundary>, String> {
-        if opt(args, "--boundary").is_some() {
+        if has_boundary {
             return Ok(None);
         }
         let h = pbfcut::extract::full_header(File::open(input).map_err(|e| format!("{input}: {e}"))?)?;
         let (w, s, e, n) = h.bbox.ok_or("the file has no bounding box in its header: give --boundary")?;
-        let ring = format!("[[{w},{s}],[{e},{s}],[{e},{n}],[{w},{n}],[{w},{s}]]");
-        Boundary::parse(&format!(r#"{{"type":"Polygon","coordinates":[{ring}]}}"#)).map(Some)
+        Boundary::from_box(&format!("{w},{s},{e},{n}")).map(Some)
     };
     let complete: Vec<&str> = opt(args, "--complete").unwrap_or("multipolygon,boundary").split(',').filter(|t| !t.is_empty()).collect();
     let border: f64 = match opt(args, "--border") {
+        Some(_) if kind == "areas" => return Err("--border: only for tiles and h3".into()),
         Some(m) => m.parse().ok().filter(|m: &f64| *m >= 0.0).ok_or("--border: a distance in metres")?,
         None => 0.0,
     };
@@ -127,7 +151,10 @@ fn cut(args: &[String], cells_cut: bool) -> Result<(), String> {
     let open = || File::open(input).map(|f| std::io::BufReader::with_capacity(1 << 20, f)).map_err(|e| format!("{input}: {e}"));
     let start = Instant::now();
     // (the name of each area, its file), and the numbers of elements of each
-    let (names, counts): (Vec<(String, String)>, _) = if cells_cut {
+    let (names, counts): (Vec<(String, String)>, _) = if let Some(list) = &areas {
+        let counts = cut_to_areas(open, &boundary, list, &out, &complete)?;
+        (list.areas.iter().map(|a| (a.name.clone(), format!("{}.osm.pbf", a.name))).collect(), counts)
+    } else if kind == "h3" {
         let res = opt(args, "--res").ok_or(format!("give --res\n{USAGE}"))?;
         let res = res.parse::<u8>().ok().and_then(|r| Resolution::try_from(r).ok()).ok_or("--res: a number from 0 to 15")?;
         let list = cells(header_box()?.as_ref().unwrap_or(&boundary), res);
@@ -142,14 +169,18 @@ fn cut(args: &[String], cells_cut: bool) -> Result<(), String> {
         let counts = cut_to_tiles(open, &boundary, &list, &out, &complete, border, None)?;
         (list.iter().map(|t| (t.name(), format!("{}_{}_{}.osm.pbf", t.z, t.x, t.y))).collect(), counts)
     };
-    let key = if cells_cut { "cell" } else { "tile" };
+    let key = match kind {
+        "h3" => "cell",
+        "areas" => "area",
+        _ => "tile",
+    };
     let files: Vec<_> = names
         .iter()
         .zip(&counts)
         .filter(|(_, c)| c.nodes > 0)
         .map(|((name, file), c)| serde_json::json!({ key: name, "file": file, "nodes": c.nodes, "ways": c.ways, "relations": c.relations }))
         .collect();
-    let mut report = serde_json::json!({ if cells_cut { "cells" } else { "tiles" }: names.len(), "files": files, "seconds": start.elapsed().as_secs_f64() });
+    let mut report = serde_json::json!({ format!("{key}s"): names.len(), "files": files, "seconds": start.elapsed().as_secs_f64() });
     if steps {
         report["peak_heap_mib"] = serde_json::json!(heap::max() as f64 / 1048576.0);
     }

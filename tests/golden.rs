@@ -101,3 +101,27 @@ fn area_file_equals_the_reference() {
     let (b, _) = pbfcut::extract::cut_to_pbf(open, &monaco, Vec::new()).unwrap();
     assert_eq!(golden("area")["monaco.osm.pbf"], hash(&b));
 }
+
+/// A list of four areas that overlap (tests/data/monaco-areas.json: a GeoJSON file, a box, a polygon file with a hole,
+/// and a polygon in the config). The reference files have the elements of `osmium extract -s smart -S
+/// types=multipolygon,boundary` 1.14 with the same config.
+#[test]
+fn area_list_files_equal_the_reference() {
+    let (pbf, _) = data();
+    let open = || std::fs::File::open(&pbf).map(std::io::BufReader::new).map_err(|e| e.to_string());
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data");
+    let text = std::fs::read_to_string(dir.join("monaco-areas.json")).unwrap();
+    let list = pbfcut::areas::AreaList::parse(&text, "name", &|f| std::fs::read_to_string(dir.join(f)).map_err(|e| e.to_string())).unwrap();
+    let out = std::env::temp_dir().join(format!("pbfcut-golden-areas-{}", std::process::id()));
+    std::fs::create_dir_all(&out).unwrap();
+    let world = Boundary::parse(WORLD).unwrap();
+    pbfcut::tilecut::cut_to_areas(open, &world, &list, &out, &["multipolygon", "boundary"]).unwrap();
+    let got: BTreeMap<String, String> = list
+        .areas
+        .iter()
+        .map(|a| format!("{}.osm.pbf", a.name))
+        .filter_map(|n| Some((n.clone(), hash(&std::fs::read(out.join(&n)).ok()?))))
+        .collect();
+    std::fs::remove_dir_all(&out).unwrap();
+    assert_eq!(got, golden("areas"));
+}

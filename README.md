@@ -1,6 +1,6 @@
 <h1 align="center">pbfcut</h1>
 
-<p align="center">Cut an OpenStreetMap <code>.osm.pbf</code> file into map tiles, H3 cells or one area, in one read of the file.</p>
+<p align="center">Cut an OpenStreetMap <code>.osm.pbf</code> file into map tiles, H3 cells or a list of areas, in one read of the file.</p>
 
 <p align="center">
   <a href="https://khoshkhah.github.io/pbfcut/">Online page</a> ·
@@ -41,6 +41,8 @@ pbfcut h3 sweden-latest.osm.pbf --res 5 -o cells/         # cells/<cell index>.o
 | `pbfcut tiles IN.osm.pbf --zoom Z -o DIR` | one file for each map tile of zoom `Z` |
 | `pbfcut tiles IN.osm.pbf --tiles LIST.txt -o DIR` | one file for each tile of a list (also of different zooms) |
 | `pbfcut h3 IN.osm.pbf --res R -o DIR` | one file for each H3 cell of resolution `R` |
+| `pbfcut areas IN.osm.pbf --areas AREA.geojson -o DIR` | one area: one file with the data inside the area (a FeatureCollection with one feature) |
+| `pbfcut areas IN.osm.pbf --areas AREAS.geojson -o DIR` | one file for each area of a list (as `osmium extract -c`; the areas can overlap) |
 | `pbfcut compare DIR_A DIR_B` | exit code 1 if the files of the two folders have different elements |
 
 Options: `--boundary AREA.geojson`, `--border METRES`, `--complete TYPES`, `--memory SIZE` (for example `512M` on a
