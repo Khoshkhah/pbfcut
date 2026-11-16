@@ -88,8 +88,11 @@
   dialog { max-width: min(440px, calc(100vw - 32px)); border: 1px solid var(--line); border-radius: 14px; padding: 20px;
     background: var(--card); color: var(--text); box-shadow: 0 10px 40px rgb(0 0 0 / .25); }
   dialog::backdrop { background: rgb(0 0 0 / .35); }
-  dialog h3 { margin: 0 0 8px; font-size: 1rem; }
-  dialog p { margin: 0 0 10px; font-size: .9rem; color: var(--muted); }
+  dialog h3 { margin: 0 0 14px; font-size: 1.05rem; }
+  dialog dl { margin: 0; }
+  dialog dt { font-weight: 600; font-size: .88rem; padding-top: 10px; border-top: 1px solid var(--line); }
+  dialog dt:first-child { border-top: 0; padding-top: 0; }
+  dialog dd { margin: 2px 0 10px; font-size: .86rem; color: var(--muted); }
   dialog form { text-align: right; margin-top: 6px; }
   [hidden] { display: none !important; }
   @media (max-width: 560px) {
@@ -177,7 +180,7 @@
     <tbody id="files"></tbody></table></div>
 </section>
 </main>
-<dialog id="help-box"><h3 id="help-title"></h3><div id="help-text"></div>
+<dialog id="help-box"><h3 id="help-title"></h3><dl id="help-text"></dl>
   <form method="dialog"><button>Close</button></form></dialog>
 <script type="module" src="app.js?v=dev"></script>
 </body>

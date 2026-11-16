@@ -62,25 +62,41 @@ for (let z = 2; z <= 16; z++) {
 }
 
 // ---- the help popups (the buttons "?")
+// each popup: a title and its items [term, text]
 const HELP = {
-  input: ["Input", "Select a region of Geofabrik or a .osm.pbf file on this computer. The file stays on your computer: the page does not upload it.",
-    "Get puts the region file into the storage of this site, through a relay (Geofabrik does not let other web pages read its files). Download saves the file on your computer."],
-  settings: ["Settings",
-    "Tiles: one file for each map tile of a zoom. One area: one file with the data inside the boundary.",
-    "Zoom: the size of the tiles. A tile is a square: its size is given at the equator. At latitude 60° a tile is half as wide and half as high.",
-    "Border: each tile file also gets the data in this border around its tile, in metres.",
-    "Threads: the number of threads of the cut (default: the cores of this computer). Without cross-origin isolation the cut uses one thread.",
-    "Boundary: a GeoJSON Polygon or MultiPolygon. Tiles: optional (without it, the tiles cover the bounding box of the file). One area: necessary."],
-  progress: ["Progress", "Memory: the WebAssembly memory of the cut. Storage: the files of this site (the input from Get, the temporary files and the result).",
-    "Each step gets its time when it ends. Move the pointer on a step to see its details."],
-  files: ["Files", "Save all to a folder writes all files into a folder that you select (Chrome and Edge on a computer). Click a file name to download one file.",
-    "When you refresh or close the page, the page removes all its files from the storage of this site. Save the files first."],
+  input: ["Input", [
+    ["Geofabrik region", "Search a region, then click Get or Download."],
+    ["Get", "Puts the file into the storage of this site, through a relay (Geofabrik does not let web pages read its files)."],
+    ["Download", "Saves the file on your computer. Then select it as a local file."],
+    ["Local file", "A .osm.pbf file on this computer. The page does not upload it."],
+  ]],
+  settings: ["Settings", [
+    ["Tiles", "One file for each map tile of the zoom."],
+    ["One area", "One file with the data inside the boundary."],
+    ["Zoom", "The size of a tile, at the equator. At latitude 60° a tile is half as wide and half as high."],
+    ["Border", "Each tile file also gets the data this many metres around its tile."],
+    ["Threads", "The number of threads of the cut. Default: the number of cores."],
+    ["Boundary", "A GeoJSON Polygon or MultiPolygon. Optional for tiles (default: the bounding box of the file), necessary for one area."],
+  ]],
+  progress: ["Progress", [
+    ["Memory", "The WebAssembly memory of the cut."],
+    ["Storage", "The files of this site: the input from Get, the temporary files and the result."],
+    ["Steps", "Each step gets its time when it ends. Move the pointer on a step to see its details."],
+  ]],
+  files: ["Files", [
+    ["Save all to a folder", "Writes all files into a folder that you select (Chrome and Edge on a computer)."],
+    ["A file name", "Downloads that file."],
+    ["Refresh or close", "The page removes all its files. Save them first."],
+  ]],
 };
 for (const b of document.querySelectorAll("button.help")) b.addEventListener("click", (e) => {
   e.preventDefault();     // a "?" in a label does not select its field
-  const [title, ...text] = HELP[b.dataset.help];
+  const [title, items] = HELP[b.dataset.help];
   $("help-title").textContent = title;
-  $("help-text").replaceChildren(...text.map((t) => Object.assign(document.createElement("p"), { textContent: t })));
+  $("help-text").replaceChildren(...items.flatMap(([term, text]) => [
+    Object.assign(document.createElement("dt"), { textContent: term }),
+    Object.assign(document.createElement("dd"), { textContent: text }),
+  ]));
   $("help-box").showModal();
 });
 
