@@ -72,7 +72,7 @@ const HELP = {
   input: ["Input", [
     ["Geofabrik region", "Geofabrik (download.geofabrik.de) is a website that gives free OpenStreetMap files of the countries and regions of the world. Search a region, then click Get or Download."],
     ["Get", "Puts the file into the storage of this site, through a relay (Geofabrik does not let web pages read its files)."],
-    ["Download", "Saves the file on your computer. Then select it as a local file."],
+    ["Download", "Saves the file on your computer, at the place that you choose, as fast as Get (Chrome and Edge). Other browsers download it directly from Geofabrik, which is slower. Then select it as a local file."],
     ["Local file", "A .osm.pbf file on this computer. The page does not upload it."],
   ]],
   settings: ["Settings", [
@@ -150,8 +150,25 @@ $("region").addEventListener("input", async () => {
 // (`Content-Location`), and each answer must have the same ETag. A part that fails starts again at the byte where it
 // stopped. A server that gives no ranges gets the old single stream. A written file is complete (createWritable
 // writes to a temporary file and replaces the file at close).
-const PARTS = 8, TRIES = 4, MIN_PART = 4 << 20;
-async function download(x, onProgress, signal) {
+// The bytes go to the file in blocks of BLOCK: a write for each piece of the network stream (about 64 KB) made the write
+// the slower half of a Get (Estonia from the cache of the relay, one connection: 3.5 s with pieces, 1.8-2.5 s with blocks).
+const PARTS = 8, TRIES = 4, MIN_PART = 4 << 20, BLOCK = 8 << 20;
+// the pieces of a stream, collected until `BLOCK` bytes; `put(bytes)` writes them
+function blocks(put) {
+  let buf = [], held = 0;
+  const flush = async () => {
+    if (!held) return 0;
+    const b = new Uint8Array(held);
+    let o = 0;
+    for (const c of buf) { b.set(c, o); o += c.length; }
+    const n = held;
+    buf = []; held = 0;
+    await put(b);
+    return n;
+  };
+  return { add: async (v) => { buf.push(v); held += v.length; return held >= BLOCK ? flush() : 0; }, flush };
+}
+async function download(x, onProgress, signal, open = async () => (await (await regionsDir()).getFileHandle(fileName(x.id), { create: true })).createWritable()) {
   const ctl = new AbortController();     // the signal of the caller, and the stop of all parts when one part fails
   signal?.addEventListener("abort", () => ctl.abort());
   const get = (u, init) => fetch(`${relay}?url=${encodeURIComponent(u)}`, { signal: ctl.signal, ...init });
@@ -169,8 +186,16 @@ async function download(x, onProgress, signal) {
   const total = Number(head.headers.get("Content-Length")) || 0;
   const url = head.headers.get("Content-Location");           // the dated file: all parts are of one version
   const etag = head.headers.get("ETag");
-  const parts = head.headers.get("Accept-Ranges") === "bytes" && url ? Math.min(PARTS, Math.floor(total / MIN_PART)) : 0;
-  const out = await (await (await regionsDir()).getFileHandle(fileName(x.id), { create: true })).createWritable();
+  // a file in the cache of the relay comes faster in one connection (Estonia, 119 MiB: 2 s, against 4.4 s in 8 parts); a
+  // request for its first byte tells (X-Relay-Cache: HIT ...), and it also starts the fill of the cache when the file is not there
+  let cached = false;
+  if (url) {
+    const probe = await get(url, { headers: { Range: "bytes=0-0" } }).catch(() => null);
+    cached = /^HIT/.test(probe?.headers.get("X-Relay-Cache") ?? "");
+    await probe?.body?.cancel().catch(() => {});
+  }
+  const parts = !cached && head.headers.get("Accept-Ranges") === "bytes" && url ? Math.min(PARTS, Math.floor(total / MIN_PART)) : 0;
+  const out = await open();
   let got = 0;
   const part = async (i) => {
     const size = Math.ceil(total / parts), end = Math.min(total, (i + 1) * size) - 1;
@@ -185,13 +210,22 @@ async function download(x, onProgress, signal) {
         }
         if (etag && r.headers.get("ETag") !== etag) throw new Error("the file changed during the download");
         const reader = r.body.getReader();
-        for (;;) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          await out.write({ type: "write", position: pos, data: value });
-          pos += value.length;
-          got += value.length;
+        // `pos` is the next byte that is written, and `got` counts the written bytes: a part that starts again starts at
+        // `pos` (the bytes of a block that was not written come again)
+        const block = blocks(async (b) => {
+          await out.write({ type: "write", position: pos, data: b });
+          pos += b.length;
+          got += b.length;
           onProgress(got, total);
+        });
+        try {
+          for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            await block.add(value);
+          }
+        } finally {
+          await block.flush();            // the bytes that came before a failure are good: they are written
         }
         if (pos <= end) throw new Error("a part ended early");
       } catch (e) {
@@ -203,16 +237,20 @@ async function download(x, onProgress, signal) {
   try {
     if (parts) await Promise.all(Array.from({ length: parts }, (_, i) => part(i).catch((e) => { ctl.abort(); throw e; })));
     else {
-      const r = await get(x.pbf);
+      const r = await get(url || x.pbf);
       if (!r.ok) throw await bad(r);
       const reader = r.body.getReader();
+      const block = blocks(async (b) => {
+        await out.write(b);
+        got += b.length;
+        onProgress(got, total);
+      });
       for (;;) {
         const { done, value } = await reader.read();
         if (done) break;
-        await out.write(value);
-        got += value.length;
-        onProgress(got, total);
+        await block.add(value);
       }
+      await block.flush();
     }
     await out.close();
   } catch (e) {
@@ -240,6 +278,31 @@ $("get").addEventListener("click", async () => {
   }
   $("get").disabled = false;
   ready();
+});
+// Download: the file to the computer. With a save dialog (Chrome, Edge), the page writes the file at the place that the
+// person picks, the same way as Get (through the relay, from its cache, or in parts): not into the storage of this site.
+// Other browsers, or no relay: the plain link to Geofabrik (one connection, slow).
+$("link").addEventListener("click", async (e) => {
+  const x = region;
+  if (!x || !relay || !window.showSaveFilePicker) return;
+  e.preventDefault();
+  let file;
+  try { file = await showSaveFilePicker({ suggestedName: x.pbf.split("/").pop(), types: [{ description: "OSM PBF", accept: { "application/octet-stream": [".pbf"] } }] }); }
+  catch { return; }                              // the dialog was closed
+  $("link").classList.add("disabled");
+  $("get-bar").hidden = false;
+  const start = performance.now();
+  try {
+    const got = await download(x, (n, total) => {
+      $("get-bar").value = total ? n / total : 0;
+      $("get-text").textContent = `Download: ${mib(n)}${total ? " of " + mib(total) : ""}, ${((performance.now() - start) / 1000).toFixed(1)} s`;
+    }, null, () => file.createWritable());
+    $("get-text").textContent = `The file is saved as ${file.name} (${mib(got)}, ${((performance.now() - start) / 1000).toFixed(1)} s).`;
+  } catch (e) {
+    $("get-text").textContent = `The download stopped: ${e.message}`;
+  }
+  $("get-bar").hidden = true;
+  $("link").classList.remove("disabled");
 });
 $("file").addEventListener("change", ready);
 

@@ -3,7 +3,8 @@
     python3 web/get_e2e.py
 
 A local relay gives 23 MiB of random bytes with `Range` (the file comes in parts over 8 connections), with `Range` and
-a connection that ends in the middle of a part (the part starts again), and without `Range` (one stream). The file in
+a connection that ends in the middle of a part (the part starts again), without `Range` (one stream), and from its
+cache (one stream). Download (the save dialog) must give the same bytes. The file in
 OPFS must equal the bytes of the relay in the three cases. It serves web/www, so
 web/build.sh is not needed.
 """
@@ -16,6 +17,7 @@ class H(http.server.SimpleHTTPRequestHandler):
     ranges = True       # the relay gives HEAD, Accept-Ranges and Content-Location, as the real one
     flaky = False       # the first part ends in the middle: the page must start it again at the byte where it stopped
     cut = threading.Event()
+    hit = False         # the relay has the file in its cache: the page gets it in one connection
 
     def __init__(self, *a, **k):
         super().__init__(*a, directory=str(WWW), **k)
@@ -27,7 +29,8 @@ class H(http.server.SimpleHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-Length", str(n))
         self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Expose-Headers", "Content-Range, Content-Length, Content-Location, ETag, Accept-Ranges")
+        self.send_header("Access-Control-Expose-Headers", "Content-Range, Content-Length, Content-Location, ETag, Accept-Ranges, X-Relay-Cache")
+        self.send_header("X-Relay-Cache", "HIT age=1" if H.hit else "MISS-direct")
         if H.ranges:
             self.send_header("Accept-Ranges", "bytes")
             self.send_header("Content-Location", "https://download.geofabrik.de/europe/monaco-261115.osm.pbf")
@@ -69,8 +72,8 @@ threading.Thread(target=srv.serve_forever, daemon=True).start()
 HASH = """async () => { const d = await navigator.storage.getDirectory(); const r = await d.getDirectoryHandle('regions'); for await (const [n, h] of r.entries()) { const f = await h.getFile(); const b = await crypto.subtle.digest('SHA-256', await f.arrayBuffer()); return f.size + ' ' + [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join(''); } }"""
 with sync_playwright() as p:
     b = p.chromium.launch()
-    for ranges, flaky in ((True, False), (True, True), (False, False)):
-        H.ranges, H.flaky = ranges, flaky
+    for ranges, flaky, hit in ((True, False, False), (True, True, False), (False, False, False), (True, False, True)):
+        H.ranges, H.flaky, H.hit = ranges, flaky, hit
         H.cut.clear()
         ctx = b.new_context(); pg = ctx.new_page()
         pg.goto(f"http://localhost:{port}/index.html?relay=/relay"); pg.wait_for_timeout(2000); pg.reload(); pg.wait_for_timeout(2000)
@@ -83,6 +86,15 @@ with sync_playwright() as p:
             print("stuck at:", pg.text_content("#get-text"))
             raise
         got = pg.evaluate(HASH)
-        print("ranges" if ranges else "no ranges", "flaky" if flaky else "", "|", pg.text_content("#get-text"), "|", "OK" if got == f"{len(DATA)} {SHA}" else f"WRONG {got}")
+        print("ranges" if ranges else "no ranges", "flaky" if flaky else "", "cache hit" if hit else "", "|", pg.text_content("#get-text"), "|", "OK" if got == f"{len(DATA)} {SHA}" else f"WRONG {got}")
+        assert got == f"{len(DATA)} {SHA}"
+        if ranges and not flaky:
+            # Download: the save dialog gives a file of the storage here (a test cannot answer a real dialog)
+            pg.evaluate("""() => { window.showSaveFilePicker = async () => (await navigator.storage.getDirectory()).getFileHandle('saved.pbf', { create: true }); }""")
+            pg.click("#link")
+            pg.wait_for_function("/is saved as|stopped/.test(document.querySelector('#get-text').textContent)", timeout=60000)
+            saved = pg.evaluate("""async () => { const f = await (await (await navigator.storage.getDirectory()).getFileHandle('saved.pbf')).getFile(); const b = await crypto.subtle.digest('SHA-256', await f.arrayBuffer()); return f.size + ' ' + [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join(''); }""")
+            print("  download |", pg.text_content("#get-text"), "|", "OK" if saved == f"{len(DATA)} {SHA}" else f"WRONG {saved}")
+            assert saved == f"{len(DATA)} {SHA}"
         ctx.close()
     b.close()
