@@ -33,6 +33,14 @@ addEventListener("pagehide", () => {
   removeAll();
 });
 
+// ---- light or dark: the choice of the person, else the setting of the system
+$("theme").addEventListener("click", () => {
+  const dark = document.documentElement.dataset.theme
+    ? document.documentElement.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+  document.documentElement.dataset.theme = dark ? "light" : "dark";
+  try { localStorage.setItem("theme", document.documentElement.dataset.theme); } catch {}
+});
+
 // ---- 1. the input
 const source = () => document.querySelector("input[name=src]:checked").value;
 for (const r of document.querySelectorAll("input[name=src]")) r.addEventListener("change", () => {
@@ -121,6 +129,7 @@ $("start").addEventListener("click", async () => {
     ...(source() === "file" ? { file: $("file").files[0] } : { region: fileName(region.id) }),
   };
   $("progress").hidden = false;
+  $("bar").style.width = "0";
   $("result").hidden = true;
   $("error").hidden = true;
   $("steps").replaceChildren(...STEPS.map(([id, label]) => {
@@ -139,7 +148,8 @@ $("start").addEventListener("click", async () => {
   }, 200);
   const used = async () => {
     const e = await navigator.storage.estimate();
-    $("storage").textContent = `${mib(e.usage)} of ${mib(e.quota)}`;
+    $("storage").textContent = mib(e.usage);
+    $("storage").title = `${mib(e.usage)} of ${mib(e.quota)}`;
   };
   used();
   const storage = setInterval(used, 1000);
@@ -165,7 +175,9 @@ $("start").addEventListener("click", async () => {
       const li = id && mark(id);
       if (li) {
         li.classList.add("done");
-        li.querySelector("b").textContent = text;
+        $("bar").style.width = `${(100 * $("steps").querySelectorAll(".done").length) / STEPS.length}%`;
+        li.querySelector("b").textContent = text.replace(/ \(.*$/, "");
+        li.title = text;
         li.querySelector(".t").textContent = `${((m.t - lastT) / 1000).toFixed(2)} s`;
         lastT = m.t;
         const next = STEPS[STEPS.findIndex((s) => s[0] === id) + 1];
@@ -220,7 +232,7 @@ async function result({ report, parts, bytes }) {
   if (files.length > MAX) $("summary").textContent += ` The table shows the first ${MAX}.`;
   const can = "showDirectoryPicker" in self;
   $("save").disabled = !can;
-  $("save-text").textContent = can ? "" : "This browser cannot save to a folder (Chrome and Edge on a computer can). Click a file name to download one file.";
+  $("save-text").textContent = can ? "" : "Chrome and Edge only. Click a file to download it.";
 }
 $("save").addEventListener("click", async () => {
   let dir;

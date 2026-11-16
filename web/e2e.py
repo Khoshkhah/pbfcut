@@ -74,7 +74,7 @@ def main():
 
             # the desktop: a local file, a boundary, threads; "Save all to a folder" into an OPFS folder
             page = open_page(browser, url, viewport={"width": 1280, "height": 900})
-            page.check("input[value=file]")
+            page.click("label[for=src-f]")
             page.set_input_files("#file", str(PBF))
             page.set_input_files("#boundary", str(AREA))
             print("desktop:", cut(page, threads=4))
@@ -122,7 +122,7 @@ def main():
             assert phone.get_attribute("#link", "href").startswith("https://download.geofabrik.de/europe/monaco")
             if shots:
                 phone.screenshot(path=shots / "phone-region.png")
-            phone.check("input[value=file]")
+            phone.click("label[for=src-f]")
             phone.set_input_files("#file", str(PBF))
             phone.set_input_files("#boundary", str(AREA))     # this test file has no bounding box in its header
             print("phone, one thread:", cut(phone, threads=1))

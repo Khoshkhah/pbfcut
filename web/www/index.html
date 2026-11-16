@@ -7,72 +7,103 @@
 <meta name="description" content="Cut an OpenStreetMap .osm.pbf file into map tiles in your browser.">
 <!-- GitHub Pages cannot send the COOP and COEP headers that threads need: this service worker adds them -->
 <script src="coi-serviceworker.js?v=dev"></script>
+<script>try { const t = localStorage.getItem("theme"); if (t) document.documentElement.dataset.theme = t; } catch {}</script>
 <style>
-  :root { --bg: #f7f7f5; --card: #fff; --text: #1d1d1f; --muted: #66666e; --line: #deded8; --accent: #2f6fb3;
-          --ok: #2e7d4f; --bad: #b3261e; color-scheme: light; }
+  :root { --bg: #f6f7f9; --card: #fff; --text: #16181d; --muted: #6b7280; --line: #e5e7eb; --field: #f3f4f6;
+          --accent: #2563eb; --accent-soft: #dbe7fe; --ok: #16a34a; --bad: #dc2626; color-scheme: light; }
   @media (prefers-color-scheme: dark) {
-    :root { --bg: #16171a; --card: #1f2125; --text: #e8e8ea; --muted: #a0a0aa; --line: #34363c; --accent: #7ab0ea;
-            --ok: #6cc895; --bad: #f2948c; color-scheme: dark; }
+    :root:not([data-theme=light]) { --bg: #0f1115; --card: #171a21; --text: #e6e8ec; --muted: #8b93a1; --line: #262a33; --field: #1f232b;
+            --accent: #6ea0ff; --accent-soft: #1d2a45; --ok: #4ade80; --bad: #f87171; color-scheme: dark; }
   }
+  :root[data-theme=dark] { --bg: #0f1115; --card: #171a21; --text: #e6e8ec; --muted: #8b93a1; --line: #262a33; --field: #1f232b;
+            --accent: #6ea0ff; --accent-soft: #1d2a45; --ok: #4ade80; --bad: #f87171; color-scheme: dark; }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.5 system-ui, sans-serif; }
-  main { max-width: 860px; margin: 0 auto; padding: 16px; }
-  header h1 { font-size: 1.5rem; margin: 8px 0 0; }
-  header p { margin: 4px 0 12px; color: var(--muted); }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+  main { max-width: 760px; margin: 0 auto; padding: 24px 16px 48px; }
+  header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+  h1 { font-size: 1.35rem; margin: 0; letter-spacing: -.01em; }
+  h1 span { color: var(--muted); font-weight: 400; }
+  nav a { color: var(--muted); text-decoration: none; margin-left: 14px; font-size: .9rem; }
+  nav a:hover, #theme:hover { color: var(--accent); }
+  #theme { background: none; border: 0; padding: 0 0 0 14px; color: var(--muted); font-size: 1rem; line-height: 1; cursor: pointer; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 18px; margin-bottom: 12px; }
+  h2 { font-size: .75rem; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 0 0 12px; font-weight: 600; }
   a { color: var(--accent); }
-  section { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin: 12px 0; }
-  h2 { font-size: 1.05rem; margin: 0 0 10px; }
-  label { display: block; margin: 8px 0 2px; font-weight: 600; font-size: .9rem; }
-  .hint { color: var(--muted); font-size: .85rem; margin: 2px 0; }
-  input[type=text], input[type=number], input[list] { width: 100%; max-width: 420px; padding: 7px 9px; font: inherit;
-    border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--text); }
-  input[type=file] { max-width: 100%; font: inherit; }
-  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 0 16px; }
-  .tabs { display: flex; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
-  .tabs label { font-weight: 500; display: flex; gap: 6px; align-items: center; margin: 0; }
-  button { font: inherit; padding: 8px 16px; border-radius: 6px; border: 1px solid var(--accent); background: var(--accent);
-    color: var(--card); cursor: pointer; }
-  a.button { display: inline-block; text-decoration: none; padding: 8px 16px; border-radius: 6px; border: 1px solid var(--accent); }
+  label { display: block; font-size: .8rem; color: var(--muted); margin-bottom: 4px; }
+  input[type=number], input[list] { width: 100%; padding: 9px 11px; font: inherit; color: var(--text); background: var(--field);
+    border: 1px solid transparent; border-radius: 9px; outline: none; }
+  input[type=number]:focus, input[list]:focus { border-color: var(--accent); background: var(--card); }
+  input[type=file] { font: inherit; font-size: .85rem; color: var(--muted); max-width: 100%; }
+  input[type=file]::file-selector-button { font: inherit; font-size: .85rem; padding: 6px 12px; margin-right: 10px; border-radius: 8px;
+    border: 1px solid var(--line); background: var(--field); color: var(--text); cursor: pointer; }
+  /* the switch region / file */
+  .switch { display: inline-flex; background: var(--field); border-radius: 10px; padding: 3px; margin-bottom: 14px; }
+  .switch input { position: absolute; opacity: 0; pointer-events: none; }
+  .switch label { margin: 0; padding: 6px 14px; border-radius: 8px; font-size: .88rem; color: var(--muted); cursor: pointer; }
+  .switch input:checked + label { background: var(--card); color: var(--text); box-shadow: 0 1px 2px rgb(0 0 0 / .08); }
+  .switch input:focus-visible + label { outline: 2px solid var(--accent); }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 12px; }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  button, a.button { font: inherit; font-size: .92rem; font-weight: 500; padding: 9px 18px; border-radius: 9px; border: 1px solid var(--accent);
+    background: var(--accent); color: #fff; cursor: pointer; text-decoration: none; display: inline-block; }
   button.secondary, a.button.secondary { background: transparent; color: var(--accent); }
-  button:disabled { opacity: .45; cursor: default; }
-  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
-  progress { width: 100%; max-width: 420px; }
-  .live { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 6px 16px; margin-bottom: 10px; }
-  .live div span { display: block; color: var(--muted); font-size: .8rem; }
-  .live div b { font-variant-numeric: tabular-nums; }
-  ol.steps { list-style: none; padding: 0; margin: 0; }
-  ol.steps li { display: grid; grid-template-columns: 2.4em 1fr auto; gap: 8px; padding: 4px 0; border-top: 1px solid var(--line);
-    color: var(--muted); font-variant-numeric: tabular-nums; }
-  ol.steps li.run { color: var(--text); font-weight: 600; }
+  button:disabled { opacity: .4; cursor: default; }
+  #start { min-width: 120px; }
+  .hint { color: var(--muted); font-size: .82rem; margin: 8px 0 0; }
+  .hint:empty { display: none; }
+  progress { width: 100%; height: 6px; margin-top: 10px; appearance: none; border: 0; border-radius: 3px; background: var(--field); overflow: hidden; }
+  progress::-webkit-progress-bar { background: var(--field); }
+  progress::-webkit-progress-value { background: var(--accent); }
+  /* progress */
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 14px; }
+  .stats div { background: var(--field); border-radius: 10px; padding: 8px 10px; min-width: 0; }
+  .stats span { display: block; font-size: .72rem; color: var(--muted); }
+  .stats b { display: block; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bar { height: 4px; background: var(--field); border-radius: 2px; overflow: hidden; margin-bottom: 8px; }
+  .bar i { display: block; height: 100%; width: 0; background: var(--accent); transition: width .3s; }
+  ol.steps { list-style: none; padding: 0; margin: 0; font-size: .88rem; }
+  ol.steps li { display: grid; grid-template-columns: 2.2em 1fr auto; gap: 8px; padding: 5px 0; color: var(--muted);
+    font-variant-numeric: tabular-nums; }
+  ol.steps li span:first-child { font-family: ui-monospace, monospace; font-size: .8rem; padding-top: 1px; }
+  ol.steps li b { font-weight: 400; }
   ol.steps li.done { color: var(--text); }
-  ol.steps li.done b::before { content: "✓ "; color: var(--ok); }
-  .err { color: var(--bad); white-space: pre-wrap; }
-  .table { overflow-x: auto; max-height: 420px; overflow-y: auto; }
-  table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; font-size: .9rem; }
-  th, td { text-align: right; padding: 4px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
-  th:first-child, td:first-child { text-align: left; }
+  ol.steps li.done span:first-child { color: var(--ok); }
+  ol.steps li.run { color: var(--accent); }
+  ol.steps li.run b { font-weight: 600; }
+  .err { color: var(--bad); white-space: pre-wrap; font-size: .88rem; margin: 10px 0 0; }
+  /* result */
+  #summary { margin: 0; font-size: .95rem; }
+  .table { overflow: auto; max-height: 380px; margin-top: 14px; border-top: 1px solid var(--line); }
+  table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; font-size: .85rem; }
+  th { position: sticky; top: 0; background: var(--card); color: var(--muted); font-weight: 500; font-size: .75rem; }
+  th, td { text-align: right; padding: 6px 8px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  th:first-child, td:first-child { text-align: left; padding-left: 0; }
+  td a { text-decoration: none; }
   [hidden] { display: none !important; }
+  @media (max-width: 560px) {
+    .grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .stats { grid-template-columns: repeat(2, 1fr); }
+    #start { flex: 1; }
+    nav a { margin: 0 14px 0 0; }
+  }
 </style>
 </head>
 <body>
 <main>
 <header>
-  <h1>pbfcut online</h1>
-  <p>Cut an OpenStreetMap <code>.osm.pbf</code> file into map tiles. The cut runs in your browser: the file is not uploaded.
-     <a href="manual/">Manual</a> · <a href="https://github.com/Khoshkhah/pbfcut">Source</a></p>
+  <h1>pbfcut <span>online</span></h1>
+  <nav><a href="manual/">Documentation</a><a href="https://github.com/Khoshkhah/pbfcut">GitHub</a><button id="theme" type="button" title="Light or dark" aria-label="Light or dark">◐</button></nav>
 </header>
 
-<section>
-  <h2>1. The input file</h2>
-  <div class="tabs">
-    <label><input type="radio" name="src" value="region" checked> A region of Geofabrik</label>
-    <label><input type="radio" name="src" value="file"> A file on this computer</label>
+<section class="card">
+  <h2>Input</h2>
+  <div class="switch">
+    <input type="radio" name="src" value="region" id="src-r" checked><label for="src-r">Geofabrik region</label>
+    <input type="radio" name="src" value="file" id="src-f"><label for="src-f">Local file</label>
   </div>
   <div id="src-region">
-    <label for="region">Region</label>
-    <input id="region" list="regions" placeholder="Type to search, for example Monaco" autocomplete="off">
+    <input id="region" list="regions" placeholder="Search a region, for example Monaco" autocomplete="off" aria-label="Region">
     <datalist id="regions"></datalist>
-    <p class="hint">The list of <a href="https://download.geofabrik.de/">download.geofabrik.de</a>.</p>
     <div id="region-actions" hidden>
       <div class="row">
         <button id="get" type="button">Get</button>
@@ -83,21 +114,21 @@
     </div>
   </div>
   <div id="src-file" hidden>
-    <label for="file">File</label>
-    <input id="file" type="file" accept=".pbf">
+    <input id="file" type="file" accept=".pbf" aria-label="File">
   </div>
 </section>
 
-<section>
-  <h2>2. The settings</h2>
+<section class="card">
+  <h2>Settings</h2>
   <div class="grid">
     <div><label for="zoom">Zoom</label><input id="zoom" type="number" min="0" max="16" value="8"></div>
     <div><label for="border">Border (m)</label><input id="border" type="number" min="0" step="1" value="0"></div>
     <div><label for="threads">Threads</label><input id="threads" type="number" min="1" max="64" value="4"></div>
   </div>
-  <label for="boundary">Boundary (optional)</label>
-  <input id="boundary" type="file" accept=".geojson,.json">
-  <p class="hint">A GeoJSON Polygon or MultiPolygon. With no boundary, the tiles cover the bounding box of the file.</p>
+  <div class="row">
+    <label for="boundary" style="margin:0" title="A GeoJSON Polygon or MultiPolygon. With no boundary, the tiles cover the bounding box of the file.">Boundary</label>
+    <input id="boundary" type="file" accept=".geojson,.json">
+  </div>
   <p id="threads-hint" class="hint"></p>
   <div class="row">
     <button id="start" type="button" disabled>Cut</button>
@@ -105,24 +136,25 @@
   </div>
 </section>
 
-<section id="progress" hidden>
-  <h2>3. Progress</h2>
-  <div class="live">
+<section class="card" id="progress" hidden>
+  <h2>Progress</h2>
+  <div class="stats">
     <div><span>Time</span><b id="time">0.0 s</b></div>
     <div><span>Step</span><b id="stage">-</b></div>
-    <div><span>WebAssembly memory</span><b id="memory">-</b></div>
-    <div><span>Storage of this site</span><b id="storage">-</b></div>
+    <div><span>Memory</span><b id="memory">-</b></div>
+    <div><span>Storage</span><b id="storage">-</b></div>
   </div>
+  <div class="bar"><i id="bar"></i></div>
   <ol class="steps" id="steps"></ol>
   <p id="error" class="err" hidden></p>
 </section>
 
-<section id="result" hidden>
-  <h2>4. The tile files</h2>
+<section class="card" id="result" hidden>
+  <h2>Tile files</h2>
   <p id="summary"></p>
   <div class="row">
     <button id="save" type="button">Save all to a folder</button>
-    <span id="save-text" class="hint"></span>
+    <span id="save-text" class="hint" style="margin:0"></span>
   </div>
   <div class="table"><table><thead><tr><th>File</th><th>Nodes</th><th>Ways</th><th>Relations</th><th>Size</th></tr></thead>
     <tbody id="files"></tbody></table></div>
