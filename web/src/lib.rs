@@ -216,13 +216,24 @@ fn area_of(open: &impl Fn() -> Result<io::BufReader<Input>, String>, boundary: &
 }
 
 /// The plan of a cut, before the cut, for the map of the page: the tiles, cells or areas of [`cut`] with the same
-/// arguments (the same lists), and the boundary. Gives JSON: `count` (the number of tiles, cells or areas), `outlines`
-/// (a GeoJSON FeatureCollection of at most `max` of them, each with its name) and `area` (the boundary, or the box of the
-/// file, as a GeoJSON MultiPolygon of its outer rings). An error in the boundary or in the areas comes here, before the cut.
+/// arguments (the same lists), and the boundary. `size` 0: no input file yet (then the tiles and cells need a
+/// boundary). Gives JSON:
+///
+/// - `count`: the number of tiles, cells or areas;
+/// - `max_level`: the highest zoom or resolution that gives at most `limit` tiles or cells (none for areas): the page
+///   cuts only up to it;
+/// - `outlines`: a GeoJSON FeatureCollection of at most `max` of them, each with its name;
+/// - `area`: the boundary, or the box of the file, as a GeoJSON MultiPolygon of its outer rings (none: areas only).
+///
+/// An error in the boundary or in the areas comes here, before the cut.
 #[wasm_bindgen]
-pub fn plan(size: f64, grid: &str, level: u8, boundary: Option<String>, areas: Option<String>, max: u32) -> Result<String, JsValue> {
+pub fn plan(size: f64, grid: &str, level: u8, boundary: Option<String>, areas: Option<String>, max: u32, limit: u32) -> Result<String, JsValue> {
     let open = setup(size, 0);
-    let area = area_of(&open, &boundary)?;
+    let area = match (&boundary, size > 0.0, grid) {
+        (Some(_), _, _) | (None, true, _) => Some(area_of(&open, &boundary)?),
+        (None, false, "areas") => None,
+        (None, false, _) => return Err("choose a file or a boundary".into()),
+    };
     let ring = |pts: &mut dyn Iterator<Item = (f64, f64)>| {
         let mut v: Vec<String> = pts.map(|(x, y)| format!("[{x:.7},{y:.7}]")).collect();
         if let Some(first) = v.first().cloned() {
@@ -235,27 +246,38 @@ pub fn plan(size: f64, grid: &str, level: u8, boundary: Option<String>, areas: O
         format!(r#"{{"type":"Feature","properties":{{"name":{name}}},"geometry":{{"type":"MultiPolygon","coordinates":[{}]}}}}"#,
             rings.iter().map(|r| format!("[{r}]")).collect::<Vec<_>>().join(","))
     };
+    // the highest level whose list has at most `limit` items (the lists grow with the level: 4 times for a zoom, 7
+    // times for a resolution, so the loop stops after a list of about 7 times `limit`)
+    let highest = |top: u8, len: &dyn Fn(u8) -> usize| (0..=top).take_while(|&l| len(l) <= limit as usize).last();
     let max = max as usize;
-    let (count, outlines): (usize, Vec<String>) = if grid == "areas" {
+    let (count, max_level, outlines): (usize, Option<u8>, Vec<String>) = if grid == "areas" {
         let text = areas.ok_or("give the GeoJSON file of the areas")?;
         let list = pbfcut::areas::AreaList::parse(&text, "name", &|f| Err(format!("{f}: the page reads one GeoJSON file only")))?;
         let f = list.areas.iter().take(max).map(|a| feature(&a.name, a.boundary.outer_rings().map(|r| ring(&mut r.iter().copied())).collect()));
-        (list.areas.len(), f.collect())
+        (list.areas.len(), None, f.collect())
     } else if grid == "h3" {
+        let area = area.as_ref().expect("an area");
         let res = pbfcut::cells::Resolution::try_from(level).map_err(|e| format!("the H3 resolution {level}: {e}"))?;
-        let list = pbfcut::cells::cells(&area, res);
+        let list = pbfcut::cells::cells(area, res);
+        let top = highest(15, &|r| pbfcut::cells::cells(area, pbfcut::cells::Resolution::try_from(r).expect("0 to 15")).len());
         let f = list.iter().take(max).map(|c| feature(&c.to_string(), vec![ring(&mut c.boundary().iter().map(|p| (p.lng(), p.lat())))]));
-        (list.len(), f.collect())
+        (list.len(), top, f.collect())
     } else {
-        let list = pbfcut::tiles::tiles(&area, level);
+        let area = area.as_ref().expect("an area");
+        let list = pbfcut::tiles::tiles(area, level);
+        let top = highest(30, &|z| pbfcut::tiles::tiles(area, z).len());
         let f = list.iter().take(max).map(|t| {
             let (w, s, e, n) = t.bounds();
             feature(&t.name(), vec![ring(&mut [(w, s), (e, s), (e, n), (w, n)].into_iter())])
         });
-        (list.len(), f.collect())
+        (list.len(), top, f.collect())
     };
-    let area = feature("area", area.outer_rings().map(|r| ring(&mut r.iter().copied())).collect());
-    Ok(format!(r#"{{"count":{count},"outlines":{{"type":"FeatureCollection","features":[{}]}},"area":{area}}}"#, outlines.join(",")))
+    let area = area.map_or("null".to_string(), |a| feature("area", a.outer_rings().map(|r| ring(&mut r.iter().copied())).collect()));
+    let max_level = max_level.map_or("null".to_string(), |l| l.to_string());
+    Ok(format!(
+        r#"{{"count":{count},"max_level":{max_level},"outlines":{{"type":"FeatureCollection","features":[{}]}},"area":{area}}}"#,
+        outlines.join(",")
+    ))
 }
 
 #[wasm_bindgen]

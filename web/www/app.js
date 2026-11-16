@@ -52,7 +52,8 @@ $("theme").addEventListener("click", () => {
     ? document.documentElement.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
   document.documentElement.dataset.theme = dark ? "light" : "dark";
   try { localStorage.setItem("theme", document.documentElement.dataset.theme); } catch {}
-  map?.setStyle(style());          // the layers of the plan come again at "style.load"
+  // a new style with no diff: "style.load" comes, and the layers of the plan come again with the colours of the theme
+  map?.setStyle(style(), { diff: false });
 });
 
 // ---- the zoom list: each zoom with the size of its tiles (a square) at the equator
@@ -316,86 +317,115 @@ $("threads").disabled = !isolated;
 $("threads-hint").textContent = isolated ? "" : "This page is not cross-origin isolated, so the cut uses one thread.";
 
 function ready() {
-  const ok = (source() === "file" ? $("file").files.length > 0 : regionReady)
-    && (kind() !== "areas" || $("areas").files.length > 0);     // the areas need their file
-  $("start").disabled = !ok || !!worker;
+  updateStart();
   askPlan();
 }
 
 // ---- the map before the cut: the outlines of the tiles, cells or areas that the cut uses (the same lists, from the
-// library, in a worker of its own), on a map of OpenFreeMap. It shows the count, and an error in the boundary or in the
-// areas before the cut.
-const MAX_OUTLINES = 3000;
-let planWorker = null, planId = 0, planTimer = null, map = null, lastPlan = null;
-const style = () => `https://tiles.openfreemap.org/styles/${dark() ? "dark" : "positron"}`;
+// library, in a worker of its own), on a map of OpenFreeMap. It shows from the start (the world), the count, the levels
+// that the page can cut, and an error in the boundary or in the areas before the cut.
+const MAX_OUTLINES = 3000;    // the outlines that the map draws
+const MAX_FILES = 20000;      // the most tiles or cells of one cut on this page: a higher zoom or resolution is off
+let planWorker = null, planId = 0, planTimer = null, map = null, lastPlan = null, tooMany = false;
 const dark = () => document.documentElement.dataset.theme
   ? document.documentElement.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+const style = () => `https://tiles.openfreemap.org/styles/${dark() ? "fiord" : "positron"}`;
+// the colours of the plan: the tiles or cells (blue), the boundary (rose, dashed); lighter on the dark map
+const COLORS = { light: { line: "#1d4ed8", fill: "#3b82f6", fillOpacity: 0.14, area: "#e11d48" },
+                 dark: { line: "#93c5fd", fill: "#60a5fa", fillOpacity: 0.16, area: "#fb7185" } };
+const updateStart = () => {
+  const ok = (source() === "file" ? $("file").files.length > 0 : regionReady)
+    && (kind() !== "areas" || $("areas").files.length > 0);     // the areas need their file
+  $("start").disabled = !ok || !!worker || tooMany;
+};
+// the levels above the highest one with at most MAX_FILES tiles or cells are off (null: all levels are on)
+const levels = (top) => {
+  for (const id of ["zoom", "res"]) for (const o of $(id).options) o.disabled = top !== null && id === (kind() === "h3" ? "res" : "zoom") && Number(o.value) > top;
+};
 function askPlan() {
   clearTimeout(planTimer);
   const input = source() === "file" ? $("file").files[0] : regionReady ? region : null;
-  if (!input || (kind() === "areas" && !$("areas").files.length)) { $("plan").hidden = true; return; }
+  const boundary = $("boundary").files[0];
+  const can = kind() === "areas" ? $("areas").files.length > 0 : !!(input || boundary);
+  if (!can) {
+    showPlan({ hint: kind() === "areas" ? "Choose the file of the areas: the map then shows them."
+      : "Choose a file or a boundary: the map then shows the tiles or cells of the cut." });
+    return;
+  }
   planTimer = setTimeout(async () => {
     const id = ++planId;
     const msg = {
-      plan: true, id, kind: kind(), level: Number($(kind() === "h3" ? "res" : "zoom").value), max: MAX_OUTLINES,
-      boundary: $("boundary").files[0] ? await $("boundary").files[0].text() : null,
+      plan: true, id, kind: kind(), level: Number($(kind() === "h3" ? "res" : "zoom").value), max: MAX_OUTLINES, limit: MAX_FILES,
+      boundary: boundary ? await boundary.text() : null,
       areas: kind() === "areas" ? await areasText($("areas").files[0]) : null,
-      ...(source() === "file" ? { file: input } : { region: fileName(input.id) }),
+      ...(!input ? {} : source() === "file" ? { file: input } : { region: fileName(input.id) }),
     };
     planWorker ??= new Worker("worker.js?v=dev", { type: "module" });
     planWorker.onmessage = ({ data: m }) => { if (m.type === "plan" && m.id === planId) showPlan(m); };
     planWorker.postMessage(msg);
   }, 250);
 }
-function showPlan({ plan, error }) {
-  $("plan").hidden = false;
-  $("plan-text").classList.toggle("bad", !!error);
-  if (error) {
-    $("plan-text").textContent = `This cut cannot start: ${error}`;
-    $("map").hidden = true;
-    return;
+function showPlan({ plan, error, hint }) {
+  const text = $("plan-text");
+  text.classList.toggle("bad", !!error);
+  tooMany = false;
+  if (hint || error) {
+    text.textContent = error ? `This cut cannot start: ${error}` : hint;
+    levels(null);
+    lastPlan = null;
+  } else {
+    const word = { tiles: "tile", h3: "cell", areas: "area" }[kind()];
+    const s = plan.count === 1 ? "" : "s";
+    const where = kind() === "areas" ? "" : `${plan.count === 1 ? " that touches" : " that touch"} ${$("boundary").files[0] ? "the boundary" : "the box of the file"}`;
+    levels(plan.max_level);
+    tooMany = kind() !== "areas" && plan.count > MAX_FILES;
+    text.classList.toggle("bad", tooMany);
+    text.textContent = tooMany
+      ? `${plan.count.toLocaleString("en")} ${word}s: this page cuts at most ${MAX_FILES.toLocaleString("en")}. Choose a lower ${kind() === "h3" ? "resolution" : "zoom"} or a smaller boundary.`
+      : `${plan.count.toLocaleString("en")} ${word}${s}${where}.`
+        + (plan.count > MAX_OUTLINES ? ` The map shows ${MAX_OUTLINES.toLocaleString("en")} of them.` : "")
+        + (kind() === "areas" ? "" : ` Only the ${word}s with data get a file.`);
+    lastPlan = plan;
   }
-  const word = { tiles: "tile", h3: "cell", areas: "area" }[kind()];
-  const where = kind() === "areas" ? "" : $("boundary").files[0] ? " that touch the boundary" : " that touch the box of the file";
-  $("plan-text").textContent = `${plan.count.toLocaleString("en")} ${word}${plan.count === 1 ? "" : "s"}${where}.`
-    + (plan.count > MAX_OUTLINES ? ` The map shows ${MAX_OUTLINES.toLocaleString("en")} of them.` : "")
-    + (kind() === "areas" ? "" : ` Only the ${word}s with data get a file.`);
-  $("map").hidden = false;
-  lastPlan = plan;
+  updateStart();
   drawPlan();
 }
 async function drawPlan() {
   if (!window.maplibregl) {
-    const css = Object.assign(document.createElement("link"), { rel: "stylesheet", href: "https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" });
-    document.head.append(css);
+    document.head.append(Object.assign(document.createElement("link"), { rel: "stylesheet", href: "https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" }));
     await new Promise((ok, bad) => document.head.append(Object.assign(document.createElement("script"),
       { src: "https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js", onload: ok, onerror: bad })));
   }
   if (!map) {
-    map = new maplibregl.Map({ container: "map", style: style(), attributionControl: { compact: true }, dragRotate: false });
+    map = new maplibregl.Map({ container: "map", style: style(), center: [10, 30], zoom: 0.6, attributionControl: { compact: true }, dragRotate: false });
+    self.planMap = map;                 // for the test
     map.touchZoomRotate.disableRotation();
     map.on("style.load", addLayers);
     // the attribution stays behind its (i) button: open, it covers a part of a small map
     map.once("load", () => document.querySelector("#map .maplibregl-ctrl-attrib")?.classList.remove("maplibregl-compact-show"));
   } else if (map.isStyleLoaded()) addLayers();
+  if (!lastPlan) return;
   // the view: the boundary and all outlines that the map shows
   const b = new maplibregl.LngLatBounds();
-  for (const f of [lastPlan.area, ...lastPlan.outlines.features]) for (const poly of f.geometry.coordinates) for (const p of poly[0]) b.extend(p);
+  for (const f of [lastPlan.area, ...lastPlan.outlines.features].filter(Boolean)) for (const poly of f.geometry.coordinates) for (const p of poly[0]) b.extend(p);
   if (!b.isEmpty()) map.fitBounds(b, { padding: 24, duration: 0, maxZoom: 15 });
 }
+const EMPTY = { type: "FeatureCollection", features: [] };
 function addLayers() {
-  if (!lastPlan) return;
-  const accent = getComputedStyle(document.documentElement).getPropertyValue("--accent").trim() || "#2563eb";
-  for (const [id, data] of [["outlines", lastPlan.outlines], ["area", lastPlan.area]]) {
+  const c = COLORS[dark() ? "dark" : "light"];
+  for (const [id, data] of [["outlines", lastPlan?.outlines ?? EMPTY], ["area", lastPlan?.area ?? EMPTY]]) {
     if (map.getSource(id)) map.getSource(id).setData(data);
     else map.addSource(id, { type: "geojson", data });
   }
-  if (!map.getLayer("outlines-fill")) {
-    map.addLayer({ id: "outlines-fill", type: "fill", source: "outlines", paint: { "fill-color": accent, "fill-opacity": 0.08 } });
-    map.addLayer({ id: "outlines-line", type: "line", source: "outlines", paint: { "line-color": accent, "line-width": 1 } });
-    map.addLayer({ id: "area-line", type: "line", source: "area", paint: { "line-color": dark() ? "#fbbf24" : "#d97706", "line-width": 2, "line-dasharray": [2, 1] } });
-  }
+  const layer = (spec, paint) => {
+    if (!map.getLayer(spec.id)) map.addLayer({ ...spec, paint });
+    else for (const [k, v] of Object.entries(paint)) map.setPaintProperty(spec.id, k, v);
+  };
+  layer({ id: "outlines-fill", type: "fill", source: "outlines" }, { "fill-color": c.fill, "fill-opacity": c.fillOpacity });
+  layer({ id: "outlines-line", type: "line", source: "outlines" }, { "line-color": c.line, "line-width": 1.2 });
+  layer({ id: "area-line", type: "line", source: "area" }, { "line-color": c.area, "line-width": 2.5, "line-dasharray": [2, 1.2] });
 }
+askPlan();     // the map from the start: the world, and what to choose
 
 // the text of the areas file for the cut: a FeatureCollection or an osmium config as it is; one Feature, Polygon or
 // MultiPolygon becomes a FeatureCollection with one area, named after the file
