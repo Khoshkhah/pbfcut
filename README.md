@@ -84,8 +84,9 @@ See [Python](https://khoshkhah.github.io/pbfcut/manual/reference/python/).
 pbfcut = { git = "https://github.com/Khoshkhah/pbfcut" }
 ```
 
-`pbfcut::tilecut::cut_to_tiles` and `cut_to_cells` write the files into a folder. `cut_to_sink` and `cut_cells_to_sink`
-give them to a function. `pbfcut::extract::cut_to_pbf` cuts one area.
+`pbfcut::job::cut` writes the files into a folder, as the command does. `pbfcut::tilecut::cut_to_tiles`,
+`cut_to_cells` and `cut_to_areas` have more control, `cut_to_sink` gives the files to a function, and
+`pbfcut::extract::cut_to_pbf` cuts one area. See [Rust](https://khoshkhah.github.io/pbfcut/manual/reference/rust/).
 
 ## Documentation
 
