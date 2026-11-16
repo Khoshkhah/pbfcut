@@ -158,6 +158,11 @@ impl Boundary {
         self.in_polygons(lon, lat)
     }
 
+    /// Is the point on a ring of the area (exactly, as [`Boundary::contains`] finds it)?
+    pub fn on_border(&self, lon: f64, lat: f64) -> bool {
+        self.polygons.iter().flatten().any(|ring| (0..ring.len()).any(|k| on_segment((lon, lat), ring[k], ring[(k + 1) % ring.len()])))
+    }
+
     /// Is the point inside the whole area (not only the part in the tile, and not the home points)?
     pub fn in_area(&self, lon: f64, lat: f64) -> bool {
         let (w, s, e, n) = self.area_bbox;

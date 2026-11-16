@@ -5,7 +5,7 @@ include it.
 
 Status (2026-11-16): M1 and M1b are done: the crate, the commands `tiles` and `compare`, the golden tests, CI, the
 manual, and the memory budget. From M2, these are done: `pbfcut h3 --res R` (H3 cells of one resolution), the command
-`areas` (GeoJSON and osmium config lists, sets of areas for overlap) and the boundary formats (GeoJSON, `.poly`, WKT,
+`areas` (GeoJSON and osmium config lists of areas that do not overlap) and the boundary formats (GeoJSON, `.poly`, WKT,
 `--bbox`). The list of cells of mixed resolutions (`--cells`) is not done.
 
 ## 1. Purpose
@@ -58,7 +58,7 @@ the same book. Only the function "the areas of a point" changes:
 |---|---|---|
 | Map tiles | `Tile::of` at the finest zoom of the list, then its parents. A point on the line between two tiles goes to the tile east or south of the line. | no |
 | H3 cells | `h3o` `LatLng::to_cell` at the resolution of the list (one resolution; the parents for a mixed list are not done) | no |
-| GeoJSON areas | an index of the areas (a grid of their bounding boxes), then the point-in-polygon test of `Boundary` | yes |
+| GeoJSON areas | an index of the areas (a grid of their bounding boxes), then the point-in-polygon test of `Boundary` | no (an error) |
 
 In the code, `tilecut::Grid` is "the areas of a point" for tiles and cells: the area of a point, the areas near a
 point (the border; for a cell, the six neighbours of ring 1, so the border must be less than half the edge of a cell),
@@ -72,12 +72,13 @@ For H3 with mixed resolutions, a coarse cell holds the points whose fine cell ha
 does not exactly cover its children, so the output of a coarse cell is the area of its children, not the hexagon of
 the coarse cell. A list of cells must not have a cell and its parent.
 
-GeoJSON areas can overlap, as in osmium, so a node can go to more than one area. The number in the book is then the
-number of a set of areas: the cut keeps a table of the sets that it finds (one set for each overlap that has a node).
-Without overlap, each set has one area, and the cut is the same as the tile cut.
-
-The rule "each node in exactly one area" holds for map tiles, for H3 cells and for GeoJSON areas that do not overlap.
-`pbfcut` writes the number of nodes in more than one area. With `--owned`, it stops with an error when areas overlap.
+The areas of a list must not overlap (Kaveh, 2026-11-16), so the rule "each node in exactly one area" holds for all
+three kinds, and the area cut is the tile cut with another `Grid`. `Grid::of` gives the first area of the list that
+holds the point, and tests the other areas of its grid cell: a point inside two areas and on the border of neither
+sets `overlap`, and the cut stops after step 1 with an error that names the two areas. A point on a shared border
+goes to the first area (osmium gives it to the two). Before this rule, PR 6 kept a set of areas for each node in an
+overlap; the measurement on Sweden (10 areas) gave the same time and memory with the two designs, so the rule makes
+the code shorter, not faster.
 
 ### 3.2 The options of the library
 
@@ -182,7 +183,7 @@ The online page (M3):
 
 1. Choose a `.osm.pbf` file. The page reads it from the disk and does not upload it.
 2. Choose map tiles (a zoom), H3 cells (a resolution) or a GeoJSON file of areas, and an optional boundary.
-3. See the areas on a map before the cut, with their number, and a warning when GeoJSON areas overlap.
+3. See the areas on a map before the cut, with their number, and an error when GeoJSON areas overlap.
 4. Start the cut. It runs in WebAssembly with threads, in a worker. The temporary files go to OPFS.
 5. See the progress: for each step, the time, the CPU use and the WebAssembly memory. A Stop button stops the cut.
 6. Download the files. In Chromium on a computer, into a folder that you choose (`showDirectoryPicker`); else as one

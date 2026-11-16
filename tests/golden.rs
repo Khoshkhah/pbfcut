@@ -102,8 +102,8 @@ fn area_file_equals_the_reference() {
     assert_eq!(golden("area")["monaco.osm.pbf"], hash(&b));
 }
 
-/// A list of four areas that overlap (tests/data/monaco-areas.json: a GeoJSON file, a box, a polygon file with a hole,
-/// and a polygon in the config). The reference files have the elements of `osmium extract -s smart -S
+/// A list of three areas that do not overlap (tests/data/monaco-areas.json: a box, a polygon file with a hole, and a
+/// polygon in the config, inside the hole). The reference files have the elements of `osmium extract -s smart -S
 /// types=multipolygon,boundary` 1.14 with the same config.
 #[test]
 fn area_list_files_equal_the_reference() {
@@ -124,4 +124,22 @@ fn area_list_files_equal_the_reference() {
         .collect();
     std::fs::remove_dir_all(&out).unwrap();
     assert_eq!(got, golden("areas"));
+}
+
+/// Two areas that overlap stop the cut with an error that names them, and no area file is written.
+#[test]
+fn areas_that_overlap_give_an_error() {
+    let (pbf, _) = data();
+    let open = || std::fs::File::open(&pbf).map(std::io::BufReader::new).map_err(|e| e.to_string());
+    let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data");
+    let text = std::fs::read_to_string(dir.join("monaco-areas-overlap.json")).unwrap();
+    let list = pbfcut::areas::AreaList::parse(&text, "name", &|_| Err("no files".into())).unwrap();
+    let out = std::env::temp_dir().join(format!("pbfcut-golden-overlap-{}", std::process::id()));
+    std::fs::create_dir_all(&out).unwrap();
+    let world = Boundary::parse(WORLD).unwrap();
+    let e = pbfcut::tilecut::cut_to_areas(open, &world, &list, &out, &["multipolygon", "boundary"]).unwrap_err();
+    let files = std::fs::read_dir(&out).unwrap().count();
+    std::fs::remove_dir_all(&out).unwrap();
+    assert!(e.contains("\"west\"") && e.contains("\"harbour\"") && e.contains("overlap"), "{e}");
+    assert_eq!(files, 0);
 }

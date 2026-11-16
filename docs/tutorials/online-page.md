@@ -25,7 +25,7 @@ folder. On a phone, the page downloads one file at a time.
     - **H3 cells**: the hexagons of the H3 grid. Each resolution more makes the cells 7 times smaller. One file for
       each cell, with the H3 index as its name, for example `872b02d27ffffff.osm.pbf`.
     - **Areas**: no grid. One file for each feature of a GeoJSON FeatureCollection, named by its property `name`
-      (as `pbfcut areas`). The areas can overlap. A file with one Polygon gives one area, named after the file.
+      (as `pbfcut areas`). The areas must not overlap. A file with one Polygon gives one area, named after the file.
 4. Set the settings:
     - **Zoom** (tiles) or **Resolution** (H3 cells): the size of the tiles or cells. The list shows the size of each.
     - **Border (m)**: each tile file also gets the data in this border around the tile (default 0).

@@ -9,7 +9,7 @@ pbfcut is faster than `osmium extract` and uses much less memory: see [Compariso
 
 - [Cut a file into tiles](tutorials/cut-to-tiles.md): a tutorial on Monaco.
 - [Cut a file into H3 cells](tutorials/cut-to-h3-cells.md): the same, with H3 cells.
-- [Cut a file into your own areas](tutorials/cut-to-areas.md): a list of areas that overlap, as `osmium extract -c`.
+- [Cut a file into your own areas](tutorials/cut-to-areas.md): a list of areas, as `osmium extract -c`.
 - [Cut a file in your browser](tutorials/online-page.md): the [online page](https://khoshkhah.github.io/pbfcut/), with
   no installation.
 - [The command line](reference/cli.md): all commands and options.
