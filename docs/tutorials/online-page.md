@@ -41,3 +41,7 @@ does not let the service worker run, the page uses one thread, and it says so un
 - The storage of the site must hold the temporary files and the tile files. The browser gives each site a part of the
   free disk space. A file of 1 GB needs approximately 3 GB of free storage.
 - The page keeps the tile files of the last cut only. A new cut removes them.
+
+!!! warning
+    When you refresh or close the page, the page removes all its files from the storage of the site: the downloaded
+    region, the temporary files and the tile files. Save the tile files before you refresh or close the page.

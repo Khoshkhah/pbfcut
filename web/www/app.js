@@ -16,6 +16,21 @@ const fileName = (id) => id.replace(/[^a-z0-9_-]/gi, "_") + ".osm.pbf";
 
 let regions = [], region = null, regionReady = false, worker = null, timer = null;
 
+// ---- the storage of the site holds the files of this page only while the page is open. A browser does not wait for
+// work that is not synchronous while a page closes, so the page removes all at close as far as it can, and at the next
+// load it removes what stays. Each open page holds the lock "pbfcut" (shared): a page removes the files only when no
+// other page of the site is open (an exclusive lock), so a second tab does not remove the files of a cut.
+const removeAll = async () => {
+  const root = await navigator.storage.getDirectory();
+  for await (const name of root.keys()) await root.removeEntry(name, { recursive: true }).catch(() => {});
+};
+const cleaned = navigator.locks.request("pbfcut", { ifAvailable: true }, (lock) => lock && removeAll())
+  .then(() => { navigator.locks.request("pbfcut", { mode: "shared" }, () => new Promise(() => {})); });
+addEventListener("pagehide", () => {
+  worker?.terminate();
+  removeAll();
+});
+
 // ---- 1. the input
 const source = () => document.querySelector("input[name=src]:checked").value;
 for (const r of document.querySelectorAll("input[name=src]")) r.addEventListener("change", () => {
@@ -35,6 +50,7 @@ $("region").addEventListener("input", async () => {
   $("region-get").hidden = !(region && relay);
   $("region-link").hidden = !(region && !relay);
   if (region) {
+    await cleaned;
     $("link").href = region.pbf;
     $("link").textContent = region.pbf.split("/").pop();
     $("get-text").textContent = "";
@@ -52,6 +68,7 @@ $("region").addEventListener("input", async () => {
 $("get").addEventListener("click", async () => {
   const x = region;
   $("get").disabled = true;
+  await cleaned;
   $("get-bar").hidden = false;
   try {
     const r = await fetch(`${relay}?url=${encodeURIComponent(x.pbf)}`);
@@ -92,6 +109,7 @@ function ready() {
 
 // ---- 3. the cut and its progress
 $("start").addEventListener("click", async () => {
+  await cleaned;
   const boundary = $("boundary").files[0] ? await $("boundary").files[0].text() : null;
   const msg = {
     zoom: Number($("zoom").value), border: Number($("border").value) || 0, threads: Number($("threads").value) || 1,

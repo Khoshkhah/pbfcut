@@ -6,7 +6,8 @@ First run web/build.sh and `cargo build --release`. The test serves web/www with
 headers, as GitHub Pages), so the page must get cross-origin isolation from its service worker. On the desktop it cuts
 tests/data/monaco.osm.pbf at zoom 14 inside tests/data/monaco.geojson, saves all files with "Save all to a folder"
 (the folder is in OPFS), and compares the bytes of each file with the files of the command line. On the phone it does
-the cut, downloads one file, and makes sure that the page has no horizontal scroll. --relay: also get Monaco from
+the cut, downloads one file, and makes sure that the page has no horizontal scroll. A refresh must remove all
+files of the site. --relay: also get Monaco from
 download.geofabrik.de through the relay of serve.py, and cut it.
 """
 
@@ -96,6 +97,17 @@ def main():
             for name in want:
                 assert got[name] == want[name], f"{name}: the page and the command line differ"
             print(f"desktop: {len(got)} files equal the files of the command line")
+            # a refresh removes all files of the site (the tile files, the temporary files, the saved folder)
+            page.reload()
+            page.wait_for_function("self.crossOriginIsolated === true")
+            page.wait_for_timeout(500)
+            left = page.evaluate("""async () => {
+                const names = [];
+                for await (const n of (await navigator.storage.getDirectory()).keys()) names.push(n);
+                return names;
+            }""")
+            assert left == [], f"after a refresh the storage has {left}"
+            print("desktop: a refresh removes all files of the site")
             if shots:
                 page.screenshot(path=shots / "desktop.png", full_page=True)
 

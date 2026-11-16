@@ -91,7 +91,11 @@ impl Read for Temp {
 
 impl Write for Temp {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        // the worker writes all bytes, or gives an error
         let n = temp_write(self.file, self.pos as f64, buf).map_err(io_err)? as usize;
+        if n != buf.len() {
+            return Err(io::Error::other(format!("a write to OPFS gave {n} of {} bytes", buf.len())));
+        }
         self.pos += n as u64;
         self.len = self.len.max(self.pos);
         Ok(n)

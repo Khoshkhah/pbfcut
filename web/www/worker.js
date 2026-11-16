@@ -6,6 +6,17 @@
 const POOL = 160;                    // the temporary files at one time: a sync access handle is made before the cut
 const pool = [], free = [];
 const parts = new Map();
+// a write to OPFS writes all bytes, or stops the cut: a full storage can give a short write or a wrong count
+function writeAll(h, buf, at) {
+  for (let n = 0; n < buf.length;) {
+    const w = h.write(buf.subarray(n), { at: at + n });
+    if (!(w > 0 && w <= buf.length - n)) {
+      throw new Error(`a write to the storage of the site failed (it wrote ${w} of ${buf.length - n} bytes): the storage is possibly full`);
+    }
+    n += w;
+  }
+  return buf.length;
+}
 let input, out, outEnd = 0, last = -1, memory = null;
 
 self.pbfcut = {
@@ -22,7 +33,7 @@ self.pbfcut = {
     return i;
   },
   temp_read: (i, at, buf) => pool[i].read(buf, { at }),
-  temp_write: (i, at, buf) => pool[i].write(buf, { at }),
+  temp_write: (i, at, buf) => writeAll(pool[i], buf, at),
   temp_drop: (i) => { free.push(i); },
   tile_write(t, buf) {
     if (t !== last) {
@@ -30,7 +41,7 @@ self.pbfcut = {
       parts.get(t).push([outEnd, 0]);
       last = t;
     }
-    for (let n = 0; n < buf.length;) n += out.write(buf.subarray(n), { at: outEnd + n });
+    writeAll(out, buf, outEnd);
     const p = parts.get(t);
     p[p.length - 1][1] += buf.length;
     outEnd += buf.length;
