@@ -3,20 +3,51 @@ site_url: https://khoshkhah.github.io/pbfcut/manual/
 repo_url: https://github.com/Khoshkhah/pbfcut
 theme:
   name: material
+  icon:
+    repo: fontawesome/brands/github
+  font:
+    text: IBM Plex Sans
+    code: JetBrains Mono
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
-      toggle: { icon: material/brightness-7, name: Dark mode }
+      primary: custom
+      accent: custom
+      toggle: { icon: material/weather-night, name: Dark mode }
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
-      toggle: { icon: material/brightness-4, name: Light mode }
+      primary: custom
+      accent: custom
+      toggle: { icon: material/weather-sunny, name: Light mode }
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - toc.follow
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+extra_css:
+  - assets/extra.css
 # the plan of the project is for developers: on GitHub, not on the site
 exclude_docs: |
   design.md
 markdown_extensions:
-  - tables
   - admonition
-  - pymdownx.superfences
+  - attr_list
+  - md_in_html
+  - tables
+  - pymdownx.details
+  - pymdownx.highlight
+  - pymdownx.inlinehilite
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - toc:
+      permalink: true
 nav:
   - Home: index.md
   - Tutorials:

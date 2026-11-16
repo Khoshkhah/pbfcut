@@ -24,3 +24,70 @@ The cut reads the file two times.
 - Read 2 writes each element into the files of its tiles, once, in the order of the input file.
 
 The elements are never all in memory, and the memory does not grow with the number of tiles.
+
+### The data of the two reads
+
+```mermaid
+flowchart TB
+    IN[("<b>Input .osm.pbf</b><br/>sorted by type, then id")]
+
+    subgraph R1["① Read 1: the plan, no element is written"]
+        direction TB
+        P1["<b>1. The node blocks</b><br/>book of the nodes: the tile of each node inside<br/>the tiles with a file · id file of the nodes"]
+        P2["<b>2. The way and relation blocks</b><br/>book of the ways: the tiles of each way<br/>extra rows (node, tile) · id file of the ways · all relations"]
+        P3["<b>3. The relations</b><br/>the members in the file, from the id files<br/>the tiles of each relation · extra rows of the complete relations"]
+        P4["<b>4. The extra nodes</b><br/>the rows sorted by node id"]
+        P1 --> P2 --> P3 --> P4
+    end
+
+    subgraph R2["② Read 2: the write, each element once"]
+        direction TB
+        W1["<b>The nodes</b><br/>to the own tile · to the tiles of the extra rows"]
+        W2["<b>The ways</b><br/>to their tiles · to the tiles of the extra rows"]
+        W3["<b>The relations</b><br/>to their tiles"]
+        W1 --> W2 --> W3
+    end
+
+    OUT[("<b>Tile files</b><br/>one complete .osm.pbf for each tile")]
+    J[("<b>Junctions files</b><br/>one for each tile")]
+
+    IN --> R1
+    R1 --> R2
+    IN -. "read again" .-> R2
+    R2 --> OUT
+    R1 -. "with NodeUses" .-> J
+
+    classDef optional stroke-dasharray: 5 4
+    classDef file stroke:#ffd43b,stroke-width:3px
+    class J optional
+    class IN,OUT,J file
+```
+
+Read 1 decodes each block of the input one time and keeps only lists of ids and tiles. Part 3 finds which members of
+the relations the file has in the id files, so it reads no block of the input again.
+
+### The threads of read 2
+
+```mermaid
+flowchart LR
+    subgraph T["① The calling thread"]
+        direction TB
+        R["<b>Read</b><br/>the next blocks of the input,<br/>with the extra rows of each block"]
+        WR["<b>Write</b><br/>the bytes of each tile to its file,<br/>in the order of the input"]
+    end
+
+    subgraph P["② The threads of the pool"]
+        direction TB
+        D["<b>Decode</b><br/>a block"]
+        G["<b>Route</b><br/>each element to its tiles"]
+        K["<b>Pack</b><br/>the elements of each tile into PBF blocks"]
+        D --> G --> K
+    end
+
+    R -- "a batch of blocks" --> D
+    K -- "the bytes of each tile" --> WR
+```
+
+The calling thread reads the next batch while the pool packs the batch before, and writes the batch before that.
+Only the calling thread opens the files: in the browser, a file of the storage belongs to the thread that opened it.
+An element for many tiles (a large boundary) is packed one time, and its block goes to each tile.
