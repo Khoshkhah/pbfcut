@@ -97,7 +97,7 @@
   [hidden] { display: none !important; }
   @media (max-width: 560px) {
     .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    .grid > div:first-child { grid-column: 1 / -1; }
+    .grid > .level { grid-column: 1 / -1; }
     .stats { grid-template-columns: repeat(2, 1fr); }
     #start { flex: 1; }
     nav a { margin: 0 14px 0 0; }
@@ -138,11 +138,13 @@
   <h2>Settings <button type="button" class="help" data-help="settings" aria-label="Help">?</button></h2>
   <div class="switch">
     <input type="radio" name="kind" value="tiles" id="kind-t" checked><label for="kind-t">Tiles</label>
+    <input type="radio" name="kind" value="h3" id="kind-h"><label for="kind-h">H3 cells</label>
     <input type="radio" name="kind" value="area" id="kind-a"><label for="kind-a">One area</label>
   </div>
   <div class="grid">
-    <div data-kind="tiles"><label for="zoom">Zoom</label><select id="zoom"></select></div>
-    <div data-kind="tiles"><label for="border">Border (m)</label><input id="border" type="number" min="0" step="1" value="0"></div>
+    <div class="level" data-kind="tiles"><label for="zoom">Zoom</label><select id="zoom"></select></div>
+    <div class="level" data-kind="h3" hidden><label for="res">Resolution</label><select id="res"></select></div>
+    <div data-kind="tiles h3"><label for="border">Border (m)</label><input id="border" type="number" min="0" step="1" value="0"></div>
     <div><label for="threads">Threads</label><input id="threads" type="number" min="1" max="64" value="4"></div>
   </div>
   <div class="row">

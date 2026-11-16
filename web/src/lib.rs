@@ -182,12 +182,13 @@ pub fn cut_area(size: f64, boundary: &str, name: &str, memory_mib: u32) -> Resul
     ))
 }
 
-/// Cut the input file (`size` bytes) into the tiles of `zoom` inside `boundary` (GeoJSON; none: the bounding box in
-/// the header of the file). `border_m`: the border of each tile in metres. `complete`: the types of the relations to
-/// complete, separated by commas. `memory_mib`: the memory budget of the cut (0: the default of the library). The tile
-/// files go to `pbfcut.tile_write`. Gives the JSON report of the command `pbfcut tiles`, with the number of each tile.
+/// Cut the input file (`size` bytes) into the map tiles of zoom `level` (`grid` "tiles"), or into the H3 cells of
+/// resolution `level` (`grid` "h3"), inside `boundary` (GeoJSON; none: the bounding box in the header of the file).
+/// `border_m`: the border of each file in metres. `complete`: the types of the relations to complete, separated by
+/// commas. `memory_mib`: the memory budget of the cut (0: the default of the library). The files go to
+/// `pbfcut.tile_write`. Gives the JSON report of the command `pbfcut tiles` or `pbfcut h3`, with the number of each file.
 #[wasm_bindgen]
-pub fn cut(size: f64, zoom: u8, boundary: Option<String>, border_m: f64, complete: &str, memory_mib: u32) -> Result<String, JsValue> {
+pub fn cut(size: f64, grid: &str, level: u8, boundary: Option<String>, border_m: f64, complete: &str, memory_mib: u32) -> Result<String, JsValue> {
     let open = setup(size, memory_mib);
     let area = match &boundary {
         Some(b) => Boundary::parse(b)?,
@@ -199,31 +200,31 @@ pub fn cut(size: f64, zoom: u8, boundary: Option<String>, border_m: f64, complet
         }
     };
     let world = Boundary::parse(WORLD)?;
-    let list = pbfcut::tiles::tiles(&area, zoom);
+    let inside = if boundary.is_some() { &area } else { &world };
     let complete: Vec<&str> = complete.split(',').map(str::trim).filter(|t| !t.is_empty()).collect();
+    let mut sink = |t: u32, b: &[u8]| tile_write(t, b).map_err(|e| format!("a file in OPFS: {e:?}"));
     let started = js_sys_now();
-    let counts = pbfcut::tilecut::cut_to_sink(open, if boundary.is_some() { &area } else { &world }, &list, &complete, border_m, &mut |t, b| {
-        tile_write(t, b).map_err(|e| format!("a tile file in OPFS: {e:?}"))
-    })?;
-    let files: Vec<String> = list
+    // (the name of each tile or cell, its file name), and the numbers of elements
+    let (names, counts): (Vec<(String, String)>, _) = if grid == "h3" {
+        let res = pbfcut::cells::Resolution::try_from(level).map_err(|e| format!("the H3 resolution {level}: {e}"))?;
+        let list = pbfcut::cells::cells(&area, res);
+        let counts = pbfcut::tilecut::cut_cells_to_sink(open, inside, &list, &complete, border_m, &mut sink)?;
+        (list.iter().map(|c| (c.to_string(), format!("{c}.osm.pbf"))).collect(), counts)
+    } else {
+        let list = pbfcut::tiles::tiles(&area, level);
+        let counts = pbfcut::tilecut::cut_to_sink(open, inside, &list, &complete, border_m, &mut sink)?;
+        (list.iter().map(|t| (t.name(), format!("{}_{}_{}.osm.pbf", t.z, t.x, t.y))).collect(), counts)
+    };
+    let files: Vec<String> = names
         .iter()
         .zip(&counts)
         .enumerate()
         .filter(|(_, (_, c))| c.nodes > 0)
-        .map(|(i, (t, c))| {
-            format!(
-                r#"{{"index":{i},"tile":"{}","file":"{}_{}_{}.osm.pbf","nodes":{},"ways":{},"relations":{}}}"#,
-                t.name(),
-                t.z,
-                t.x,
-                t.y,
-                c.nodes,
-                c.ways,
-                c.relations
-            )
+        .map(|(i, ((name, file), c))| {
+            format!(r#"{{"index":{i},"tile":"{name}","file":"{file}","nodes":{},"ways":{},"relations":{}}}"#, c.nodes, c.ways, c.relations)
         })
         .collect();
-    Ok(format!(r#"{{"tiles":{},"files":[{}],"seconds":{}}}"#, list.len(), files.join(","), (js_sys_now() - started) / 1000.0))
+    Ok(format!(r#"{{"tiles":{},"files":[{}],"seconds":{}}}"#, names.len(), files.join(","), (js_sys_now() - started) / 1000.0))
 }
 
 #[wasm_bindgen]

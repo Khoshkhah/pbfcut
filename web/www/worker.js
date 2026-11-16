@@ -85,7 +85,7 @@ onmessage = async ({ data: o }) => {
     postMessage({ type: "stage", name: "cut", t: performance.now() });
     const report = JSON.parse(o.kind === "area"
       ? m.cut_area(size, o.boundary, o.name, 0)
-      : m.cut(size, o.zoom, o.boundary, o.border, o.complete, 0));
+      : m.cut(size, o.kind, o.level, o.boundary, o.border, o.complete, 0));
     out.flush();
     out.close();
     for (const h of pool) h.close();

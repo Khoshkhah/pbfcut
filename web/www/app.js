@@ -10,11 +10,13 @@ const STEPS = {
     ["3d", "the members of the multipolygons"], ["4", "the nodes from outside"],
     ["5a", "Read 2: the nodes to the tiles"], ["5d", "Read 2: the ways to the tiles"], ["5e", "Read 2: the relations, and the tile files"],
   ],
+  h3: null,     // the same steps as the tiles (below)
   area: [
     ["1", "the nodes inside"], ["2", "the ways and relations"], ["3", "the relations, the member ways"],
     ["4", "write the nodes"], ["5", "write the ways and relations"],
   ],
 };
+STEPS.h3 = STEPS.tiles;
 const kind = () => document.querySelector("input[name=kind]:checked").value;
 for (const r of document.querySelectorAll("input[name=kind]")) r.addEventListener("change", () => {
   for (const e of document.querySelectorAll("[data-kind]")) e.hidden = !e.dataset.kind.split(" ").includes(kind());
@@ -61,6 +63,13 @@ for (let z = 2; z <= 16; z++) {
   $("zoom").append(new Option(`${String(z).padStart(2, "\u2007")}\u2003\u2003${w} × ${w} km`, z, false, z === 8));
 }
 
+// ---- the H3 resolutions: each with the mean area of its cells (hexagons), as in the H3 library
+const H3_KM2 = [4357449, 609788, 86802, 12393, 1770, 252.9, 36.13, 5.161, 0.7373, 0.1053, 0.01505, 0.00215, 0.000307];
+for (let r = 2; r <= 12; r++) {
+  const a = H3_KM2[r], area = a >= 100 ? Math.round(a).toLocaleString("en") : a >= 1 ? a.toFixed(1) : a.toPrecision(2);
+  $("res").append(new Option(`${String(r).padStart(2, "\u2007")}\u2003\u2003${area} km²`, r, false, r === 7));
+}
+
 // ---- the help popups (the buttons "?")
 // each popup: a title and its items [term, text]
 const HELP = {
@@ -71,12 +80,14 @@ const HELP = {
     ["Local file", "A .osm.pbf file on this computer. The page does not upload it."],
   ]],
   settings: ["Settings", [
-    ["Tiles", "One file for each map tile of the zoom."],
-    ["One area", "One file with the data inside the boundary."],
+    ["Tiles", "The square tiles of web maps (OpenStreetMap, Google Maps): at zoom z the map is 2^z × 2^z tiles, and each zoom more cuts a tile into 4. One file for each tile, named z_x_y.osm.pbf."],
+    ["H3 cells", "The hexagons of the H3 grid (made by Uber): at each resolution the world is cut into cells of almost equal area, and each resolution more makes cells 7 times smaller. One file for each cell, named with its H3 index, for example 872b02d27ffffff.osm.pbf."],
+    ["One area", "No grid: one file with the data inside the boundary."],
     ["Zoom", "The size of a tile, at the equator. At latitude 60° a tile is half as wide and half as high."],
-    ["Border", "Each tile file also gets the data this many metres around its tile."],
+    ["Resolution", "The mean area of an H3 cell."],
+    ["Border", "Each file also gets the data this many metres around its tile or cell."],
     ["Threads", "The number of threads of the cut. Default: the number of cores."],
-    ["Boundary", "A GeoJSON Polygon or MultiPolygon. Optional for tiles (default: the bounding box of the file), necessary for one area."],
+    ["Boundary", "A GeoJSON Polygon or MultiPolygon. Optional for tiles and cells (default: the bounding box of the file), necessary for one area."],
   ]],
   progress: ["Progress", [
     ["Memory", "The WebAssembly memory of the cut."],
@@ -186,7 +197,7 @@ $("start").addEventListener("click", async () => {
   const steps = STEPS[kind()];
   const msg = {
     kind: kind(), name: ($("boundary").files[0]?.name.replace(/\.(geo)?json$/i, "") || "area") + ".osm.pbf",
-    zoom: Number($("zoom").value), border: Number($("border").value) || 0, threads: Number($("threads").value) || 1,
+    level: Number($(kind() === "h3" ? "res" : "zoom").value), border: Number($("border").value) || 0, threads: Number($("threads").value) || 1,
     boundary, complete: "multipolygon,boundary",
     ...(source() === "file" ? { file: $("file").files[0] } : { region: fileName(region.id) }),
   };
@@ -279,6 +290,8 @@ async function result({ report, parts, bytes }) {
   $("result").hidden = false;
   $("summary").textContent = kind() === "area"
     ? `One area file (${mib(bytes)}), in ${report.seconds.toFixed(1)} s.`
+    : kind() === "h3"
+    ? `${files.length} cell files (${mib(bytes)}) of ${report.tiles} cells at resolution ${$("res").value}, in ${report.seconds.toFixed(1)} s.`
     : `${files.length} tile files (${mib(bytes)}) of ${report.tiles} tiles at zoom ${$("zoom").value}, in ${report.seconds.toFixed(1)} s.`;
   const MAX = 1000;
   $("files").replaceChildren(...files.slice(0, MAX).map((f) => {
