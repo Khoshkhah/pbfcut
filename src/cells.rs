@@ -36,7 +36,7 @@ pub fn cells(boundary: &Boundary, res: Resolution) -> Vec<CellIndex> {
 }
 
 /// [`cells`], or none when there are more than `most` cells: the search stops there (a plan that only needs to know
-/// whether a resolution has too many cells, for example the online page with its limit of files).
+/// whether a resolution has too many cells, for example the browser page with its limit of files).
 pub fn cells_at_most(boundary: &Boundary, res: Resolution, most: usize) -> Option<Vec<CellIndex>> {
     let (w, s, e, n) = boundary.bbox();
     let in_box = |c: CellIndex| {

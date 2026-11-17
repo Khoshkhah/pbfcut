@@ -3,7 +3,7 @@
 The memory of the cut follows its memory budget (`--memory`, default a quarter of the physical memory, at least 2G), not the number of tiles. All numbers are
 from a Mac mini (12 cores, 16 GB) with the Geofabrik files of Sweden (975 MB) and France (5.1 GB), with pbfcut
 0.2.0 on 2026-11-16, one run at a time, with the budget 2G when the table shows no other budget. For osmium and the
-online page, see [Comparison](comparison.md).
+browser page, see [Comparison](comparison.md).
 
 - **Heap**: the most memory that the cut used (from `--steps`).
 - **RSS**: the most memory that the system gave to the process. It is larger, because the allocator keeps some freed
@@ -46,7 +46,7 @@ zlib blocks. The elements are the same.
 | Cut | zlib compression on | zlib compression off |
 |---|---|---|
 | Sweden, zoom 8, command line | 12.6 s, 1,000 MB | 9.3 s, 1,619 MB |
-| Sweden, zoom 8, online page | 21.1 s, 944 MiB | 17.0 s, 1,536 MiB |
+| Sweden, zoom 8, browser page | 21.1 s, 944 MiB | 17.0 s, 1,536 MiB |
 | Monaco, zoom 14, command line | 0.04 s, 1 MB | 0.03 s, 2 MB |
 
 Use zlib compression off for files that a program reads one time, soon after the cut. Keep it on for files that people

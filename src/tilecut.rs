@@ -252,7 +252,7 @@ mod tests {
         assert!(n > 4, "the cut gave {n} tile files");
     }
 
-    /// The cut into a sink (the online page) gives the same tile files as the cut into a folder, also with a border.
+    /// The cut into a sink (the browser page) gives the same tile files as the cut into a folder, also with a border.
     #[test]
     fn the_cut_into_a_sink_equals_the_cut_into_a_folder() {
         let data = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/data");

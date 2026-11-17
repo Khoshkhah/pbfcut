@@ -9,7 +9,7 @@ It is faster than `osmium extract` and uses much less memory ([Comparison](expla
 
 | To do this | Read |
 |---|---|
-| Cut a file with no installation | [Cut a file in your browser](tutorials/online-page.md) |
+| Cut a file with no installation | [Cut a file in your browser](tutorials/browser-page.md) |
 | Cut a file into map tiles | [Cut a file into tiles](tutorials/cut-to-tiles.md) |
 | Cut a file into H3 cells | [Cut a file into H3 cells](tutorials/cut-to-h3-cells.md) |
 | Cut a file into your own areas | [Cut a file into your own areas](tutorials/cut-to-areas.md) |

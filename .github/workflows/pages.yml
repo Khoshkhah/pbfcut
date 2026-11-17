@@ -1,6 +1,6 @@
 name: Pages
 
-# The online page at https://khoshkhah.github.io/pbfcut/ (web/), and the manual at /pbfcut/manual/.
+# The browser page at https://khoshkhah.github.io/pbfcut/ (web/), and the manual at /pbfcut/manual/.
 on:
   push:
     branches: [main]
@@ -33,7 +33,7 @@ jobs:
         with:
           tool: wasm-bindgen@0.2.129
       - uses: Swatinem/rust-cache@v2
-      - name: The online page (the WebAssembly modules, and the regions of Geofabrik)
+      - name: The browser page (the WebAssembly modules, and the regions of Geofabrik)
         run: REGIONS=1 ./web/build.sh
       - uses: actions/setup-python@v5
         with:

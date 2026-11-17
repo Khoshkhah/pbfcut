@@ -1,6 +1,6 @@
 # Comparison
 
-pbfcut, its [online page](../tutorials/online-page.md) and osmium cut the same files into the same map tiles.
+pbfcut, its [browser page](../tutorials/browser-page.md) and osmium cut the same files into the same map tiles.
 
 ## The results
 
@@ -10,22 +10,22 @@ Each tool has the same three numbers:
 - **Peak RSS**: the most physical memory in use at one time.
 - **Peak footprint**: the most memory in use at one time, also the memory that macOS compressed or moved to the disk.
 
-For pbfcut and osmium, `/usr/bin/time -l` gives the two memory numbers. For the online page, they are the sum of all
+For pbfcut and osmium, `/usr/bin/time -l` gives the two memory numbers. For the browser page, they are the sum of all
 processes of the browser, sampled every second. osmium is `osmium extract -c -s smart -S types=multipolygon,boundary`.
 
 | File | Zoom | Tool | Time | Peak RSS | Peak footprint |
 |---|---|---|---|---|---|
 | Sweden | 6 | pbfcut | 11.7 s | 0.92 GiB | 0.71 GiB |
-| | | online page | 20.5 s | 1.72 GiB | 1.14 GiB |
+| | | browser page | 20.5 s | 1.72 GiB | 1.14 GiB |
 | | | osmium | 53.6 s | 7.95 GiB | 55.4 GiB |
 | Sweden | 8 | pbfcut | 12.7 s | 1.02 GiB | 0.80 GiB |
-| | | online page | 21.7 s | 1.87 GiB | 1.25 GiB |
+| | | browser page | 21.7 s | 1.87 GiB | 1.25 GiB |
 | | | osmium | failed after 370 s (1) | 9.27 GiB | 203 GiB |
 | France | 6 | pbfcut | 56.5 s | 1.29 GiB | 1.07 GiB |
-| | | online page | 93.6 s | 1.92 GiB | 1.24 GiB |
+| | | browser page | 93.6 s | 1.92 GiB | 1.24 GiB |
 | | | osmium | 176.4 s | 7.02 GiB | 35.9 GiB |
 | France | 8 | pbfcut | 58.7 s | 1.55 GiB | 1.15 GiB |
-| | | online page | 98.0 s | 2.24 GiB | 1.42 GiB |
+| | | browser page | 98.0 s | 2.24 GiB | 1.42 GiB |
 | | | osmium | stopped after 600 s (2) | 7.07 GiB | 120 GiB |
 
 1. osmium ended with an error, and its files were not complete.
@@ -51,7 +51,7 @@ the same files. Its WebAssembly memory alone is smaller than the numbers above: 
 | Computer | Mac mini (Mac18,5), Apple silicon, 12 cores, 16 GB memory |
 | System | macOS 27.2 |
 | pbfcut | built with Rust 1.99.1 (`cargo build --release`) |
-| The online page | Chromium 140 (headless, Playwright), cross-origin isolated |
+| The browser page | Chromium 140 (headless, Playwright), cross-origin isolated |
 | osmium | osmium-tool 1.19.1 |
 | Threads | 12 for pbfcut and the page |
 
