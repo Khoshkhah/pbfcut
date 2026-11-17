@@ -69,7 +69,7 @@ fn main() -> Result<(), String> {
 
 ## Settings
 
-- `store::set_memory(bytes)`: the memory budget. Default: 2 GiB.
+- `store::set_memory(bytes)`: the memory budget. Default: a quarter of the physical memory, at least 2 GiB (`store::default_memory()`).
 - `store::set_temp_dir(Some(path))`: the folder of the temporary files.
 - Threads: the cut uses the `rayon` pool. For fewer threads, run it in
   `rayon::ThreadPoolBuilder::new().num_threads(n).build()?.install(...)`.

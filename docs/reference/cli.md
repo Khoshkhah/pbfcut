@@ -54,7 +54,7 @@ These options are the same for `tiles`, `h3` and `areas`.
 | `--border METRES` | Also give each tile or cell the ways less than this distance from it. Default: 0. Not for `areas`. For `h3`, less than half the edge of a cell. |
 | `--complete TYPES` | The relation types that each file gets with all their members. Default: `multipolygon,boundary`. `""`: none. |
 | `--no-compression` | Write raw blocks, not zlib blocks. The cut is about 25 % faster, and the files are about 1.6 times larger (Sweden, zoom 8: 9.5 s and 1,619 MB, against 12.7 s and 1,000 MB). The elements are the same. |
-| `--memory SIZE` | The memory budget, for example `4G` or `512M`. Default: `2G`. A smaller budget uses more disk and more time, and gives the same files. |
+| `--memory SIZE` | The memory budget, for example `4G` or `512M`. Default: a quarter of the physical memory, at least 2G (on Windows: 2G). A larger budget makes a large cut faster; a smaller budget uses more disk and more time, and gives the same files. |
 | `--temp DIR` | The folder of the temporary files. Default: the temporary folder of the system. |
 | `--steps` | Write the time and the memory of each step to standard error. This makes the cut slower. |
 

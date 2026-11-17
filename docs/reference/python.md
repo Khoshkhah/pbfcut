@@ -46,7 +46,7 @@ The options are keyword arguments, as on [the command line](cli.md):
 | `boundary` | A file (GeoJSON, `.poly` or WKT), or a box `(west, south, east, north)`. Default: all data. |
 | `border` | Metres. Default: `0.0`. Not for `cut_areas`. |
 | `complete` | The relation types to keep whole. Default: `("multipolygon", "boundary")`. |
-| `memory` | Bytes, or a text such as `"4G"` or `"512M"`. Default: `2G`. |
+| `memory` | Bytes, or a text such as `"4G"` or `"512M"`. Default: a quarter of the physical memory, at least 2G (on Windows: 2G). |
 | `temp` | The folder of the temporary files. |
 | `threads` | The number of threads. Default: all processors. |
 | `compress` | `True` (default): zlib blocks. `False`: raw blocks, as `--no-compression`: a faster cut, larger files. |

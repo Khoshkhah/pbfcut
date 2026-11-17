@@ -102,7 +102,7 @@ Requirements:
 
 - The peak memory does not grow with the number of areas.
 - The peak memory grows only a little with the size of the input.
-- The peak memory stays near the budget (`--memory`, default 2G). A smaller budget makes the cut use more disk and
+- The peak memory stays near the budget (`--memory`, default a quarter of the physical memory, at least 2G). A smaller budget makes the cut use more disk and
   more time. It does not make the cut fail.
 - All large data goes to temporary files at once, and a step holds only the data that it needs.
 - The bytes of the output files do not change with the budget.
