@@ -8,7 +8,7 @@ cache (one stream). Download (the save dialog) must give the same bytes. The fil
 OPFS must equal the bytes of the relay in the three cases. It serves web/www, so
 web/build.sh is not needed.
 """
-import hashlib, http.server, os, re, sys, threading
+import hashlib, http.server, os, re, sys, threading, time
 from pathlib import Path
 from playwright.sync_api import sync_playwright
 WWW = Path(__file__).resolve().parent / "www"; DATA = os.urandom(23 * (1 << 20) + 12345)      # not a multiple of 4 MiB
@@ -18,6 +18,7 @@ class H(http.server.SimpleHTTPRequestHandler):
     flaky = False       # the first part ends in the middle: the page must start it again at the byte where it stopped
     cut = threading.Event()
     hit = False         # the relay has the file in its cache: the page gets it in one connection
+    slow = False        # 16 KiB every 50 ms: time to press Cancel
 
     def __init__(self, *a, **k):
         super().__init__(*a, directory=str(WWW), **k)
@@ -62,7 +63,13 @@ class H(http.server.SimpleHTTPRequestHandler):
                 self.wfile.flush()
                 self.close_connection = True
                 return
-            self.wfile.write(body)
+            if H.slow:
+                for i in range(0, len(body), 1 << 14):
+                    self.wfile.write(body[i:i + (1 << 14)])
+                    self.wfile.flush()
+                    time.sleep(0.05)
+            else:
+                self.wfile.write(body)
         except (BrokenPipeError, ConnectionResetError):
             pass
 
@@ -97,4 +104,22 @@ with sync_playwright() as p:
             print("  download |", pg.text_content("#get-text"), "|", "OK" if saved == f"{len(DATA)} {SHA}" else f"WRONG {saved}")
             assert saved == f"{len(DATA)} {SHA}"
         ctx.close()
+    # Cancel: the download stops, and no part of the file stays in the storage
+    H.ranges, H.flaky, H.hit, H.slow = True, False, False, True
+    ctx = b.new_context(); pg = ctx.new_page()
+    pg.goto(f"http://localhost:{port}/index.html?relay=/relay"); pg.wait_for_timeout(2000); pg.reload(); pg.wait_for_timeout(2000)
+    pg.fill("#region", "Europe / Monaco"); pg.dispatch_event("#region", "input"); pg.click("#get")
+    pg.wait_for_selector("#get-cancel:not([hidden])", timeout=30000)
+    pg.wait_for_timeout(500)
+    pg.click("#get-cancel")
+    try:
+        pg.wait_for_function("document.querySelector('#get-text').textContent === 'The download is canceled.'", timeout=30000)
+    except Exception:
+        print("cancel stuck at:", pg.text_content("#get-text"), "| cancel hidden:", pg.is_hidden("#get-cancel"))
+        raise
+    left = pg.evaluate("""async () => { const r = await (await navigator.storage.getDirectory()).getDirectoryHandle('regions'); const n = []; for await (const k of r.keys()) n.push(k); return n; }""")
+    assert left == [] and pg.is_hidden("#get-cancel") and pg.is_enabled("#get"), left
+    print("cancel |", pg.text_content("#get-text"), "| no file in the storage")
+    ctx.close()
+    H.slow = False
     b.close()

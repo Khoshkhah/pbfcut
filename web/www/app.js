@@ -338,22 +338,31 @@ async function download(x, onProgress, signal, open = async () => (await (await 
   if (total && got !== total) throw new Error(`the download stopped after ${got} of ${total} bytes`);
   return got;
 }
+// Cancel: the download of Get or Download stops (the file that it was writing is not kept)
+let getStop = null;
+$("get-cancel").addEventListener("click", () => getStop?.abort());
+const cancelable = () => { getStop = new AbortController(); $("get-cancel").hidden = false; return getStop.signal; };
+const cancelDone = () => { getStop = null; $("get-cancel").hidden = true; };
 $("get").addEventListener("click", async () => {
   const x = region;
   $("get").disabled = true;
   await cleaned;
   $("get-bar").hidden = false;
   const start = performance.now();
+  const signal = cancelable(), had = regionReady;
   try {
     const got = await download(x, (n, total) => {
       $("get-bar").value = total ? n / total : 0;
       $("get-text").textContent = `${mib(n)}${total ? " of " + mib(total) : ""}, ${((performance.now() - start) / 1000).toFixed(1)} s`;
-    });
+    }, signal);
     regionReady = region === x;
     $("get-text").textContent = `The file is in the storage of this site (${mib(got)}, ${((performance.now() - start) / 1000).toFixed(1)} s).`;
   } catch (e) {
-    $("get-text").textContent = `The download stopped: ${e.message}`;
+    $("get-text").textContent = signal.aborted ? "The download is canceled." : `The download stopped: ${e.message}`;
+    // a canceled or failed Get keeps no part of the file (a copy from before stays: the write did not replace it)
+    if (!had) await (await regionsDir()).removeEntry(fileName(x.id)).catch(() => {});
   }
+  cancelDone();
   $("get").disabled = false;
   ready();
 });
@@ -370,15 +379,17 @@ $("link").addEventListener("click", async (e) => {
   $("link").classList.add("disabled");
   $("get-bar").hidden = false;
   const start = performance.now();
+  const signal = cancelable();
   try {
     const got = await download(x, (n, total) => {
       $("get-bar").value = total ? n / total : 0;
       $("get-text").textContent = `Download: ${mib(n)}${total ? " of " + mib(total) : ""}, ${((performance.now() - start) / 1000).toFixed(1)} s`;
-    }, null, () => file.createWritable());
+    }, signal, () => file.createWritable());
     $("get-text").textContent = `The file is saved as ${file.name} (${mib(got)}, ${((performance.now() - start) / 1000).toFixed(1)} s).`;
   } catch (e) {
-    $("get-text").textContent = `The download stopped: ${e.message}`;
+    $("get-text").textContent = signal.aborted ? "The download is canceled." : `The download stopped: ${e.message}`;
   }
+  cancelDone();
   $("get-bar").hidden = true;
   $("link").classList.remove("disabled");
 });
