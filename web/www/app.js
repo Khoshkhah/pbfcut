@@ -1,6 +1,8 @@
 // The page: it chooses the input and the settings, runs the cut in a worker (worker.js), shows the progress, and saves
 // the tile files. The tile files stay in one OPFS file ("cut/tiles"); `parts` says where each file is in it.
 
+import { zipBlob } from "./zip.js?v=dev";
+
 const $ = (id) => document.getElementById(id);
 // the steps of each kind of cut, in their order: the library names each step at its end
 const STEPS = {
@@ -104,6 +106,7 @@ const HELP = {
   ]],
   files: ["Files", [
     ["Save all to a folder", "Writes all files into a folder that you select (Chrome and Edge on a computer)."],
+    ["Download all as .zip", "One .zip file with all files, in each browser. The files are stored as they are, with no more compression: their blocks are compressed already."],
     ["A file name", "Downloads that file."],
     ["Refresh or close", "The page removes all its files. Save them first."],
   ]],
@@ -609,8 +612,10 @@ $("start").addEventListener("click", async () => {
   worker = new Worker("worker.js?v=dev", { type: "module" });
   worker.onmessage = ({ data: m }) => {
     if (m.type === "stage") {
-      $("stage").textContent = m.name;
-      if (m.name === "cut") { lastT = m.t; $("steps").firstElementChild.classList.add("run"); $("stage").textContent = steps[0][1]; }
+      // the box "Step" shows the code of the step only (its name is in the list of steps); before the cut: "start"
+      $("stage").textContent = "start";
+      $("stage").title = m.name;
+      if (m.name === "cut") { lastT = m.t; $("steps").firstElementChild.classList.add("run"); $("stage").textContent = steps[0][0]; $("stage").title = steps[0][1]; }
     } else if (m.type === "memory") {
       shared = m.memory;
       show(m.bytes);
@@ -627,7 +632,8 @@ $("start").addEventListener("click", async () => {
         li.querySelector(".t").textContent = `${((m.t - lastT) / 1000).toFixed(2)} s`;
         lastT = m.t;
         const next = steps[[...$("steps").children].indexOf(li) + 1];
-        $("stage").textContent = next ? next[1] : "the end";
+        $("stage").textContent = next ? next[0] : "the end";
+        $("stage").title = next ? next[1] : "";
       }
     } else if (m.type === "done") {
       for (const x of $("steps").children) x.classList.remove("run");
@@ -682,10 +688,30 @@ async function result({ report, parts, bytes }) {
     return tr;
   }));
   if (files.length > MAX) $("summary").textContent += ` The table shows the first ${MAX}.`;
+  // "Save all to a folder" needs showDirectoryPicker (Chrome and Edge on a computer); the .zip works in each browser
   const can = "showDirectoryPicker" in self;
-  $("save").disabled = !can;
-  $("save-text").textContent = can ? "" : "Chrome and Edge only. Click a file to download it.";
+  $("save").hidden = !can;
+  $("zip").classList.toggle("secondary", can);
+  $("save-text").textContent = "";
 }
+// one .zip of all files (stored: the blocks are compressed already), for each browser
+$("zip").addEventListener("click", async () => {
+  const { all, files } = saved;
+  $("zip").disabled = true;
+  const start = performance.now();
+  try {
+    const blob = await zipBlob(files.map((f) => ({ name: f.file, blob: new Blob(f.parts.map(([s, n]) => all.slice(s, s + n))) })),
+      (i, n) => { $("save-text").textContent = `Making the .zip: ${i} of ${n} files`; }, self.zip64ForTest === true);
+    const name = `pbfcut-${{ tiles: `zoom-${$("zoom").value}`, h3: `h3-${$("res").value}`, areas: "areas" }[kind()]}.zip`;
+    const url = URL.createObjectURL(blob);
+    Object.assign(document.createElement("a"), { href: url, download: name }).click();
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    $("save-text").textContent = `${name}: ${files.length} files, ${mib(blob.size)} (${((performance.now() - start) / 1000).toFixed(1)} s).`;
+  } catch (e) {
+    $("save-text").textContent = `The .zip stopped: ${e.message}`;
+  }
+  $("zip").disabled = false;
+});
 $("save").addEventListener("click", async () => {
   let dir;
   try { dir = await showDirectoryPicker({ mode: "readwrite", id: "pbfcut" }); } catch { return; }
