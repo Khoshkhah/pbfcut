@@ -103,6 +103,7 @@ const HELP = {
     ["Memory", "The WebAssembly memory of the cut."],
     ["Storage", "The files of this site: the input from Get, the temporary files and the result."],
     ["Steps", "Each step gets its time when it ends. Move the pointer on a step to see its details."],
+    ["read, storage", "Under a step: the time that the cut waited in it for the input file (read) and for the storage of this site (storage: the temporary files and the result). The rest of the step is the work on the threads. When storage is most of a step, more threads do not make that step faster."],
   ]],
   files: ["Files", [
     ["Save all to a folder", "Writes all files into a folder that you select (Chrome and Edge on a computer)."],
@@ -595,12 +596,24 @@ $("start").addEventListener("click", async () => {
     const li = document.createElement("li");
     li.dataset.step = id;
     li.innerHTML = `<span>${id}</span><b></b><span class="t"></span>`;
-    li.querySelector("b").textContent = label;
+    li.querySelector("b").append(label, Object.assign(document.createElement("small"), { className: "io" }));
     return li;
   }));
   const t0 = performance.now();
   let shared = null, lastT = null, panic = null;
-  let stepStart = performance.now();     // the running step: its time counts up in the list (a long step is not frozen)
+  let stepStart = performance.now();
+  // the waits of the thread of the cut for the input file and for the storage, at the end of the last step (worker.js)
+  let io = { read: 0, store: 0 };
+  const sec = (ms) => `${(ms / 1000).toFixed(1)} s`;
+  const showIo = (li, m) => {
+    const read = m.read - io.read, store = m.store - io.store;
+    io = { read: m.read, store: m.store };
+    const small = li.querySelector(".io");
+    const add = (ms) => { small.dataset.read = (Number(small.dataset.read || 0) + ms.read); small.dataset.store = (Number(small.dataset.store || 0) + ms.store); };
+    add({ read, store });
+    const r = Number(small.dataset.read), w = Number(small.dataset.store);
+    small.textContent = r >= 50 || w >= 50 ? [r >= 50 && `read ${sec(r)}`, w >= 50 && `storage ${sec(w)}`].filter(Boolean).join(" · ") : "";
+  };     // the running step: its time counts up in the list (a long step is not frozen)
   let top = 0;     // the most WebAssembly memory of this cut
   const show = (bytes) => { top = Math.max(top, bytes); $("memory").textContent = mib(bytes); };
   timer = setInterval(() => {
@@ -630,7 +643,7 @@ $("start").addEventListener("click", async () => {
       // the box "Step" shows the code of the step only (its name is in the list of steps); before the cut: "start"
       $("stage").textContent = "start";
       $("stage").title = m.name;
-      if (m.name === "cut") { lastT = m.t; stepStart = performance.now(); $("steps").firstElementChild.classList.add("run"); $("stage").textContent = steps[0][0]; $("stage").title = steps[0][1]; }
+      if (m.name === "cut") { lastT = m.t; stepStart = performance.now(); io = { read: m.read, store: m.store }; $("steps").firstElementChild.classList.add("run"); $("stage").textContent = steps[0][0]; $("stage").title = steps[0][1]; }
     } else if (m.type === "memory") {
       shared = m.memory;
       show(m.bytes);
@@ -642,7 +655,9 @@ $("start").addEventListener("click", async () => {
       if (li) {
         li.classList.add("done");
         $("bar").style.width = `${(100 * $("steps").querySelectorAll(".done").length) / steps.length}%`;
-        li.querySelector("b").textContent = text.replace(/ \(.*$/, "");
+        const b = li.querySelector("b");
+        b.replaceChildren(text.replace(/ \(.*$/, ""), b.querySelector(".io"));
+        showIo(li, m);
         li.title = text;
         li.querySelector(".t").textContent = `${((m.t - lastT) / 1000).toFixed(2)} s`;
         lastT = m.t;
@@ -652,6 +667,9 @@ $("start").addEventListener("click", async () => {
         $("stage").title = next ? next[1] : "";
       }
     } else if (m.type === "done") {
+      // the last writes of the tile files come after the last step: they count for it
+      const last = [...$("steps").querySelectorAll("li.done")].pop();
+      if (last) showIo(last, m);
       for (const x of $("steps").children) x.classList.remove("run");
       $("stage").textContent = "done";
       show(m.memory);

@@ -27,7 +27,8 @@ It works in each browser, also on a phone. Chrome and Edge on a computer can als
    `estonia-latest.osm.pbf`.
 6. Look at the map. It shows the tiles, cells or areas of the cut and the boundary, with their number. If the
    boundary or the areas file has an error, the page shows it here.
-7. Click **Cut**. The page shows each step and its time.
+7. Click **Cut**. The page shows each step and its time. Under a step, "read" and "storage" are the time that it
+   waited for the input file and for the storage of the site; the rest is work on the threads.
 8. Click **Download all as .zip** (each browser), or **Save all to a folder** and select a folder (Chrome and Edge).
    The `.zip` holds the files as they are, with no more compression. It takes no more storage in the browser.
 

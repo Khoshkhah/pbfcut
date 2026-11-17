@@ -249,6 +249,8 @@ command line.
    plan of the library (`plan` in `web/src/lib.rs`), at most 20,000 files, the outline of a Geofabrik region as the
    default boundary (`web/www/regions/`, from Geofabrik's `index-v1.json` by `web/regions.py`). "Download all as .zip" for each
    browser (`web/www/zip.js`: stored files, CRC-32, ZIP64 above 4 GiB; a Blob of slices of the OPFS file, so no more
-   storage). Not done: the CPU use.
+   storage). In place of the CPU use (the browser gives no CPU time of a thread): the wait of the thread of the cut
+   for the input file and for the storage, for each step (France, zoom 8, on the Mac: less than 1 s of storage in
+   each step, so the long steps are work on the threads).
 
 A step is done only when its part of the manual is done.

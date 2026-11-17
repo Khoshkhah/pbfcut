@@ -18,6 +18,11 @@ function writeAll(h, buf, at) {
   return buf.length;
 }
 let input, out, outEnd = 0, memory = null;
+// the time that the thread of the cut waits for the input file (read) and for the storage of the site (the temporary
+// files and the tile files), in ms since the start: each step message gives both, and the page shows them for each step
+let readMs = 0, storeMs = 0;
+const timed = (add, f) => { const t = performance.now(); try { return f(); } finally { add(performance.now() - t); } };
+const addRead = (ms) => { readMs += ms; }, addStore = (ms) => { storeMs += ms; };
 const PIECE = 4 << 20, HELD = 64 << 20;
 const held = new Map();      // tile -> { chunks, n }: the bytes that wait
 let heldBytes = 0;
@@ -33,16 +38,18 @@ function flushTile(t) {
   const p = parts.get(t), lastPart = p[p.length - 1];
   if (lastPart && lastPart[0] + lastPart[1] === outEnd) lastPart[1] += b.length;
   else p.push([outEnd, b.length]);
-  writeAll(out, b, outEnd);
+  timed(addStore, () => writeAll(out, b, outEnd));
   outEnd += b.length;
 }
 
 self.pbfcut = {
   input_read(at, buf) {
-    if (input.handle) return input.handle.read(buf, { at });
-    const b = new FileReaderSync().readAsArrayBuffer(input.file.slice(at, at + buf.length));
-    buf.set(new Uint8Array(b));
-    return b.byteLength;
+    return timed(addRead, () => {
+      if (input.handle) return input.handle.read(buf, { at });
+      const b = new FileReaderSync().readAsArrayBuffer(input.file.slice(at, at + buf.length));
+      buf.set(new Uint8Array(b));
+      return b.byteLength;
+    });
   },
   temp_create() {
     const i = free.pop();
@@ -50,8 +57,8 @@ self.pbfcut = {
     pool[i].truncate(0);
     return i;
   },
-  temp_read: (i, at, buf) => pool[i].read(buf, { at }),
-  temp_write: (i, at, buf) => writeAll(pool[i], buf, at),
+  temp_read: (i, at, buf) => timed(addStore, () => pool[i].read(buf, { at })),
+  temp_write: (i, at, buf) => timed(addStore, () => writeAll(pool[i], buf, at)),
   temp_drop: (i) => { free.push(i); },
   // the bytes of a tile wait in memory until 4 MiB (all tiles: at most 64 MiB): the cut gives a tile some 100 KB at a
   // time, mixed with the other tiles, and one part for each piece made France at zoom 8 73,356 parts; a page that
@@ -65,7 +72,7 @@ self.pbfcut = {
     if (h.n >= PIECE) flushTile(t);
     if (heldBytes > HELD) for (const [u] of [...held].sort((a, b) => b[1].n - a[1].n)) { flushTile(u); if (heldBytes <= HELD / 2) break; }
   },
-  step: (name) => postMessage({ type: "step", name, t: performance.now(), memory: memory?.buffer.byteLength }),
+  step: (name) => postMessage({ type: "step", name, t: performance.now(), memory: memory?.buffer.byteLength, read: readMs, store: storeMs }),
 };
 
 // The plan for the map of the page (o.plan): the outlines of the tiles, cells or areas, before the cut. It reads only
@@ -125,15 +132,14 @@ onmessage = async ({ data: o }) => {
       input = { file: o.file };
       size = o.file.size;
     }
-    postMessage({ type: "stage", name: "cut", t: performance.now() });
+    postMessage({ type: "stage", name: "cut", t: performance.now(), read: readMs, store: storeMs });
     const report = JSON.parse(m.cut(size, o.kind, o.level, o.boundary, o.border, o.complete, 0, o.areas, o.compress));
     for (const t of [...held.keys()]) flushTile(t);
-    out.flush();
-    out.close();
+    timed(addStore, () => { out.flush(); out.close(); });
     for (const h of pool) h.close();
     input.handle?.close();
     await dir.removeEntry("temp", { recursive: true });
-    postMessage({ type: "done", report, parts: [...parts], bytes: outEnd, memory: memory.buffer.byteLength });
+    postMessage({ type: "done", report, parts: [...parts], bytes: outEnd, memory: memory.buffer.byteLength, read: readMs, store: storeMs });
   } catch (e) {
     postMessage({ type: "error", message: String(e?.message ?? e) });
   }
