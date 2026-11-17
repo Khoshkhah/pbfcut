@@ -233,9 +233,10 @@ fn area_of(open: &impl Fn() -> Result<io::BufReader<Input>, String>, boundary: &
 #[wasm_bindgen]
 pub fn plan(size: f64, grid: &str, level: u8, boundary: Option<String>, areas: Option<String>, max: u32, limit: u32) -> Result<String, JsValue> {
     let open = setup(size, 0);
+    // the areas need no area (as the cut: a file with no box in its header can be cut to areas)
     let area = match (&boundary, size > 0.0, grid) {
+        (None, _, "areas") => None,
         (Some(_), _, _) | (None, true, _) => Some(area_of(&open, &boundary)?),
-        (None, false, "areas") => None,
         (None, false, _) => return Err("choose a file or a boundary".into()),
     };
     let ring = |pts: &mut dyn Iterator<Item = (f64, f64)>| {

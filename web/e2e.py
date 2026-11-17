@@ -296,6 +296,7 @@ def main():
             # areas with no boundary: the test file has no box in its header, and areas need none
             page.set_input_files("#boundary", [])
             page.set_input_files("#areas", str(two))
+            page.wait_for_function("document.querySelector('#plan-text').textContent.startsWith('2 areas')", timeout=60000)
             page.click("#start")
             page.wait_for_selector("#result:not([hidden]), #error:not([hidden])", timeout=120000)
             assert not page.locator("#error").is_visible(), page.text_content("#error")
