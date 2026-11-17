@@ -15,11 +15,12 @@ STEPS.h3 = STEPS.areas = STEPS.tiles;     // the same cut, with cells or areas i
 const kind = () => document.querySelector("input[name=kind]:checked").value;
 for (const r of document.querySelectorAll("input[name=kind]")) r.addEventListener("change", () => {
   for (const e of document.querySelectorAll("[data-kind]")) e.hidden = !e.dataset.kind.split(" ").includes(kind());
+  resetNote();
   ready();
 });
-$("boundary").addEventListener("change", ready);
-$("zoom").addEventListener("change", ready);
-$("res").addEventListener("change", ready);
+$("boundary").addEventListener("change", () => { resetNote(); ready(); });
+$("zoom").addEventListener("change", () => { resetNote(); ready(); });
+$("res").addEventListener("change", () => { resetNote(); ready(); });
 $("areas").addEventListener("change", ready);
 // The relay: a Cloudflare Worker of the owner that sends Geofabrik's files with CORS headers (Geofabrik sends none).
 // It accepts only files of download.geofabrik.de and only some origins. ?relay=<address> gives another relay
@@ -58,17 +59,21 @@ $("theme").addEventListener("click", () => {
 });
 
 // ---- the zoom list: each zoom with the size of its tiles (a square) at the equator
-for (let z = 2; z <= 16; z++) {
-  const km = 40075 / 2 ** z, w = km >= 10 ? Math.round(km) : km.toFixed(1);
+// all zooms to 18: the limit of 20,000 files turns off the zooms that are too fine for the area (see the plan)
+for (let z = 0; z <= 18; z++) {
+  const km = 40075 / 2 ** z, w = km >= 10 ? Math.round(km).toLocaleString("en") + " km" : km >= 1 ? km.toFixed(1) + " km" : Math.round(km * 1000) + " m";
   // a figure space before a zoom of one digit, and two em spaces after it: the numbers line up (option text has no CSS)
-  $("zoom").append(new Option(`${String(z).padStart(2, "\u2007")}\u2003\u2003${w} × ${w} km`, z, false, z === 8));
+  $("zoom").append(new Option(`${String(z).padStart(2, "\u2007")}\u2003\u2003${w} × ${w}`, z, false, z === 8));
 }
 
 // ---- the H3 resolutions: each with the mean area of its cells (hexagons), as in the H3 library
-const H3_KM2 = [4357449, 609788, 86802, 12393, 1770, 252.9, 36.13, 5.161, 0.7373, 0.1053, 0.01505, 0.00215, 0.000307];
-for (let r = 2; r <= 12; r++) {
-  const a = H3_KM2[r], area = a >= 100 ? Math.round(a).toLocaleString("en") : a >= 1 ? a.toFixed(1) : a.toPrecision(2);
-  $("res").append(new Option(`${String(r).padStart(2, "\u2007")}\u2003\u2003${area} km²`, r, false, r === 7));
+// all resolutions 0 to 15 (the mean areas of the H3 library); the limit of 20,000 files turns off the fine ones
+const H3_KM2 = [4357449, 609788, 86802, 12393, 1770, 252.9, 36.13, 5.161, 0.7373, 0.1053, 0.01505, 0.00215, 0.000307,
+  0.0000439, 0.00000627, 0.000000895];
+for (let r = 0; r <= 15; r++) {
+  const a = H3_KM2[r], area = a >= 100 ? Math.round(a).toLocaleString("en") + " km²" : a >= 1 ? a.toFixed(1) + " km²"
+    : a >= 0.01 ? a.toPrecision(2) + " km²" : (a * 1e6 >= 10 ? Math.round(a * 1e6).toLocaleString("en") : (a * 1e6).toFixed(1)) + " m²";
+  $("res").append(new Option(`${String(r).padStart(2, "\u2007")}\u2003\u2003${area}`, r, false, r === 7));
 }
 
 // ---- the help popups (the buttons "?")
@@ -123,11 +128,69 @@ for (const r of document.querySelectorAll("input[name=src]")) r.addEventListener
 fetch("regions.json?v=dev").then((r) => r.json()).then((list) => {
   const byId = new Map(list.map((x) => [x[0], x]));
   const path = (x) => (x[2] && byId.has(x[2]) ? path(byId.get(x[2])) + " / " : "") + x[1];
-  regions = list.map(([id, name, parent, pbf]) => ({ id, label: path([id, name, parent]), pbf })).sort((a, b) => a.label.localeCompare(b.label));
-  $("regions").replaceChildren(...regions.map((x) => Object.assign(document.createElement("option"), { value: x.label })));
+  regions = list.map(([id, name, parent, pbf]) => {
+    const label = path([id, name, parent]);
+    return { id, name, label, parent: label.slice(0, -name.length - 3), pbf, key: label.toLowerCase() };
+  }).sort((a, b) => a.label.localeCompare(b.label));
+  document.documentElement.dataset.regions = regions.length;     // for the test
+  if ($("region").value) findRegions();
 });
-$("region").addEventListener("input", async () => {
-  region = regions.find((x) => x.label === $("region").value) ?? null;
+// the region search: each word must be in the path of the region ("europe / estonia"); a name that starts with the
+// first word comes first, then a name that has it, then a path that has it; shorter paths first. One match: it is chosen at once. More: Enter or Tab takes the active
+// one (the first), the arrows move, Esc closes the list, a click or a tap takes one.
+const MAX_MATCHES = 8;
+// 0: the name starts with the first word; 1: the name has it; 2: only the path has it
+const rank = (x, words) => { const n = x.name.toLowerCase(); return n.startsWith(words[0]) ? 0 : n.includes(words[0]) ? 1 : 2; };
+let matches = [], active = 0;
+function findRegions() {
+  const q = $("region").value.trim().toLowerCase();
+  const exact = regions.find((x) => x.key === q);
+  if (exact) return pickRegion(exact);
+  const words = q.split(/[\s/,]+/).filter(Boolean);
+  matches = !words.length ? [] : regions.filter((x) => words.every((w) => x.key.includes(w)))
+    .sort((a, b) => rank(a, words) - rank(b, words) || a.label.length - b.label.length);
+  if (matches.length === 1) return pickRegion(matches[0]);
+  if (region) setRegion(null);
+  active = 0;
+  showMatches(q !== "");
+}
+function showMatches(open) {
+  const ul = $("region-list");
+  ul.replaceChildren(...(matches.length ? matches.slice(0, MAX_MATCHES).map((x, i) => {
+    const li = Object.assign(document.createElement("li"), { role: "option", id: `region-${i}` });
+    li.setAttribute("aria-selected", i === active);
+    li.append(x.name, Object.assign(document.createElement("span"), { textContent: x.parent }));
+    li.addEventListener("mousedown", (e) => { e.preventDefault(); pickRegion(x); });   // before the field loses the focus
+    return li;
+  }) : [Object.assign(document.createElement("li"), { className: "none", textContent: "No region has these words." })]));
+  ul.hidden = !open;
+  $("region").setAttribute("aria-expanded", String(open));
+  $("region").setAttribute("aria-activedescendant", open && matches.length ? `region-${active}` : "");
+}
+function pickRegion(x) {
+  $("region").value = x.label;
+  matches = [];
+  showMatches(false);
+  if (region !== x) setRegion(x);
+}
+$("region").addEventListener("input", findRegions);
+$("region").addEventListener("keydown", (e) => {
+  const open = !$("region-list").hidden && matches.length > 0;
+  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+    if (!matches.length) return;
+    e.preventDefault();
+    active = (active + (e.key === "ArrowDown" ? 1 : -1) + Math.min(matches.length, MAX_MATCHES)) % Math.min(matches.length, MAX_MATCHES);
+    showMatches(true);
+  } else if ((e.key === "Enter" || e.key === "Tab") && open) {
+    if (e.key === "Enter") e.preventDefault();      // Tab takes the match and moves on, as usual
+    pickRegion(matches[active]);
+  } else if (e.key === "Escape") showMatches(false);
+});
+$("region").addEventListener("blur", () => showMatches(false));
+// the region of the input: the buttons Get and Download, and whether its file is in the storage of this site
+async function setRegion(x) {
+  resetNote();
+  region = x;
   regionReady = false;
   $("region-actions").hidden = !region;
   if (region) {
@@ -139,14 +202,14 @@ $("region").addEventListener("input", async () => {
     $("get").title = relay ? "Put the file into the storage of this site" : "Not available: Geofabrik sends no CORS headers";
     $("get-text").textContent = "";
     const kept = await (await regionsDir()).getFileHandle(fileName(region.id)).then((h) => h.getFile(), () => null);
-    if (kept) {
+    if (kept && region === x) {
       regionReady = true;
       $("get-text").textContent = `The file is in the storage of this site (${mib(kept.size)}).`;
       $("get").textContent = "Get it again";
     } else $("get").textContent = "Get";
   }
   ready();
-});
+}
 // the download through the relay into OPFS. One connection to Geofabrik is slow (Luxembourg, 48 MB: 30 s), so the file
 // comes in 8 parts at the same time with `Range`, each part at its place in the file (11 s). "<region>-latest.osm.pbf" is a
 // redirect that Geofabrik answers after about 30 s, each time. A dated file that is there answers in 0.5 s. So the page asks
@@ -309,7 +372,7 @@ $("link").addEventListener("click", async (e) => {
   $("get-bar").hidden = true;
   $("link").classList.remove("disabled");
 });
-$("file").addEventListener("change", ready);
+$("file").addEventListener("change", () => { resetNote(); ready(); });
 
 // ---- 2. the settings
 const isolated = self.crossOriginIsolated;
@@ -329,6 +392,10 @@ const MAX_FILES = 20000;      // the most tiles or cells of one cut on this page
 let planWorker = null, planId = 0, planTimer = null, map = null, lastPlan = null, tooMany = false;
 // the style of the map can take layers (MapLibre's isStyleLoaded() stays false while base-map tiles load)
 let styleReady = false, planWhere = "";
+// the note when the page lowered the zoom or the resolution to the highest one that it can cut: it stays until the person
+// changes the input, the boundary, the kind or the level
+let lowered = "";
+const resetNote = () => { lowered = ""; };
 const dark = () => document.documentElement.dataset.theme
   ? document.documentElement.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
 const style = () => `https://tiles.openfreemap.org/styles/${dark() ? "fiord" : "positron"}`;
@@ -406,11 +473,20 @@ function showPlan({ plan, error, hint }) {
     const s = plan.count === 1 ? "" : "s";
     const where = kind() === "areas" ? "" : `${plan.count === 1 ? " that touches" : " that touch"} ${planWhere}`;
     levels(plan.max_level);
+    // above the highest level that the page can cut: the page takes that level, and says so
+    const sel = $(kind() === "h3" ? "res" : "zoom"), name = kind() === "h3" ? "resolution" : "zoom";
+    if (kind() !== "areas" && plan.max_level !== null && Number(sel.value) > plan.max_level
+        && [...sel.options].some((o) => Number(o.value) === plan.max_level)) {
+      lowered = `The ${name} ${sel.value} gives more than ${MAX_FILES.toLocaleString("en")} ${word}s here, so the page chose ${plan.max_level}. `;
+      sel.value = String(plan.max_level);
+      askPlan();
+      return;
+    }
     tooMany = kind() !== "areas" && plan.count > MAX_FILES;
     text.classList.toggle("bad", tooMany);
     text.textContent = tooMany
-      ? `${plan.count.toLocaleString("en")} ${word}s: this page cuts at most ${MAX_FILES.toLocaleString("en")}. Choose a lower ${kind() === "h3" ? "resolution" : "zoom"} or a smaller boundary.`
-      : `${plan.count.toLocaleString("en")} ${word}${s}${where}.`
+      ? `More than ${MAX_FILES.toLocaleString("en")} ${word}s: this page cuts at most ${MAX_FILES.toLocaleString("en")}. Choose a lower ${kind() === "h3" ? "resolution" : "zoom"} or a smaller boundary.`
+      : lowered + `${plan.count.toLocaleString("en")} ${word}${s}${where}.`
         + (kind() === "areas" ? "" : ` Only the ${word}s with data get a file.`);
     // too many: only the boundary (a part of the outlines looks like a cut of a part of the area)
     lastPlan = tooMany ? { ...plan, outlines: EMPTY } : plan;

@@ -9,7 +9,8 @@ Use Chrome or Edge on a computer. Only these browsers can save all files into a 
 
 1. Open <https://khoshkhah.github.io/pbfcut/>.
 2. Select the input file. Do one of these steps:
-    - Type the name of a Geofabrik region, for example `Monaco`, and select it. Click **Get**.
+    - Type some letters of a Geofabrik region, for example `mona`. One match is selected at once. With more
+      matches, press Enter for the first one, or select one with the arrow keys and Enter or Tab. Click **Get**.
     - Select a `.osm.pbf` file on your computer.
 3. Select the kind of cut:
 
@@ -19,13 +20,13 @@ Use Chrome or Edge on a computer. Only these browsers can save all files into a 
     | **H3 cells** | One file for each H3 cell, for example `872b02d27ffffff.osm.pbf`. |
     | **Areas** | One file for each feature of a GeoJSON file, with its property `name` as the file name. The areas must not overlap. |
 
-4. Set the **Zoom** or the **Resolution**. The list shows the size of the tiles or cells.
+4. Set the **Zoom** or the **Resolution**. The list shows the size of the tiles or cells. A zoom or resolution
+   that gives more than 20,000 files for the area is off, and the page lowers a choice that is too high.
 5. Optional: select a **Boundary** file (GeoJSON, `.poly` or WKT). The cut then keeps only the data inside it.
    Without it, a Geofabrik region uses the outline of the region, also a local file with a Geofabrik name such as
    `estonia-latest.osm.pbf`.
-6. Look at the map. It shows the tiles, cells or areas of the cut and the boundary, with their number. A zoom or
-   resolution that gives more than 20,000 files is off. If the boundary or the areas file has an error, the page shows
-   it here.
+6. Look at the map. It shows the tiles, cells or areas of the cut and the boundary, with their number. If the
+   boundary or the areas file has an error, the page shows it here.
 7. Click **Cut**. The page shows each step and its time.
 8. Click **Save all to a folder**, and select a folder.
 

@@ -32,6 +32,12 @@ pub fn bounds(c: CellIndex) -> (f64, f64, f64, f64) {
 /// The cells of resolution `res` that the boundary touches (the box of the corners of the cell touches it), sorted by
 /// their index. The cut gives no file to a cell with no node inside, so a cell too many costs only a little time.
 pub fn cells(boundary: &Boundary, res: Resolution) -> Vec<CellIndex> {
+    cells_at_most(boundary, res, usize::MAX).expect("no limit")
+}
+
+/// [`cells`], or none when there are more than `most` cells: the search stops there (a plan that only needs to know
+/// whether a resolution has too many cells, for example the online page with its limit of files).
+pub fn cells_at_most(boundary: &Boundary, res: Resolution, most: usize) -> Option<Vec<CellIndex>> {
     let (w, s, e, n) = boundary.bbox();
     let in_box = |c: CellIndex| {
         let (cw, cs, ce, cn) = bounds(c);
@@ -51,11 +57,14 @@ pub fn cells(boundary: &Boundary, res: Resolution) -> Vec<CellIndex> {
         let (cw, cs, ce, cn) = bounds(c);
         if boundary.touches_box(cw, cs, ce, cn) {
             out.push(c);
+            if out.len() > most {
+                return None;
+            }
         }
         todo.extend(c.grid_disk_safe(1).filter(|d| !seen.contains(d)));
     }
     out.sort_unstable();
-    out
+    Some(out)
 }
 
 /// Is the point within `m` metres of the cell `c` (inside it, or at most `m` from its edges)? The distance is on a flat

@@ -246,9 +246,10 @@ pub fn plan(size: f64, grid: &str, level: u8, boundary: Option<String>, areas: O
         format!(r#"{{"type":"Feature","properties":{{"name":{name}}},"geometry":{{"type":"MultiPolygon","coordinates":[{}]}}}}"#,
             rings.iter().map(|r| format!("[{r}]")).collect::<Vec<_>>().join(","))
     };
-    // the highest level whose list has at most `limit` items (the lists grow with the level: 4 times for a zoom, 7
-    // times for a resolution, so the loop stops after a list of about 7 times `limit`)
-    let highest = |top: u8, len: &dyn Fn(u8) -> usize| (0..=top).take_while(|&l| len(l) <= limit as usize).last();
+    // the highest level whose list has at most `limit` items: each list stops after `limit` items (the lists grow with
+    // the level, so the loop stops at the first level above the limit)
+    let limit = limit as usize;
+    let highest = |top: u8, fits: &dyn Fn(u8) -> bool| (0..=top).take_while(|&l| fits(l)).last();
     let max = max as usize;
     let (count, max_level, outlines): (usize, Option<u8>, Vec<String>) = if grid == "areas" {
         let text = areas.ok_or("give the GeoJSON file of the areas")?;
@@ -258,19 +259,22 @@ pub fn plan(size: f64, grid: &str, level: u8, boundary: Option<String>, areas: O
     } else if grid == "h3" {
         let area = area.as_ref().expect("an area");
         let res = pbfcut::cells::Resolution::try_from(level).map_err(|e| format!("the H3 resolution {level}: {e}"))?;
-        let list = pbfcut::cells::cells(area, res);
-        let top = highest(15, &|r| pbfcut::cells::cells(area, pbfcut::cells::Resolution::try_from(r).expect("0 to 15")).len());
+        let top = highest(15, &|r| pbfcut::cells::cells_at_most(area, pbfcut::cells::Resolution::try_from(r).expect("0 to 15"), limit).is_some());
+        // above the limit: no list (a count of `limit` + 1 says "more than the limit")
+        let list = pbfcut::cells::cells_at_most(area, res, limit).unwrap_or_default();
+        let count = if top.is_some_and(|t| level <= t) { list.len() } else { limit + 1 };
         let f = list.iter().take(max).map(|c| feature(&c.to_string(), vec![ring(&mut c.boundary().iter().map(|p| (p.lng(), p.lat())))]));
-        (list.len(), top, f.collect())
+        (count, top, f.collect())
     } else {
         let area = area.as_ref().expect("an area");
-        let list = pbfcut::tiles::tiles(area, level);
-        let top = highest(30, &|z| pbfcut::tiles::tiles(area, z).len());
+        let top = highest(30, &|z| pbfcut::tiles::tiles_at_most(area, z, limit).is_some());
+        let list = pbfcut::tiles::tiles_at_most(area, level, limit).unwrap_or_default();
+        let count = if top.is_some_and(|t| level <= t) { list.len() } else { limit + 1 };
         let f = list.iter().take(max).map(|t| {
             let (w, s, e, n) = t.bounds();
             feature(&t.name(), vec![ring(&mut [(w, s), (e, s), (e, n), (w, n)].into_iter())])
         });
-        (list.len(), top, f.collect())
+        (count, top, f.collect())
     };
     let area = area.map_or("null".to_string(), |a| feature("area", a.outer_rings().map(|r| ring(&mut r.iter().copied())).collect()));
     let max_level = max_level.map_or("null".to_string(), |l| l.to_string());
