@@ -13,6 +13,8 @@ crate-type = ["cdylib"]
 pbfcut = { path = ".." }
 # one version with the wasm-bindgen command of build.sh and of the workflows
 wasm-bindgen = "=0.2.129"
+# the CRC-32 of each file for the .zip, computed while the cut writes it (pure Rust, also wasm32)
+crc32fast = "1"
 # the names of the outlines of the map, as JSON strings
 serde_json = "1"
 # rayon on Web Workers: only in the build with the feature "threads" (nightly Rust, a cross-origin isolated page)

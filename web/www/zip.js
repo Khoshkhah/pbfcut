@@ -1,7 +1,7 @@
 // One .zip file of many files, for the browsers that cannot save into a folder (Firefox, Safari, phones). The files
 // are "stored" (method 0, no compression): the blocks of an .osm.pbf file are compressed already. The zip is a Blob
 // made of the parts of the files as they are (slices of the OPFS file of the cut), so the page holds only the headers
-// in memory, also for a cut of some GB. The CRC-32 of each file needs one read of its bytes. ZIP64 comes when a size or
+// in memory, also for a cut of some GB. The cut gives the CRC-32 of each file, so the zip reads no file again. ZIP64 comes when a size or
 // a place passes 4 GiB (or with `zip64` true, for the test).
 
 const TABLE = (() => {
@@ -40,7 +40,7 @@ function bytes(fields) {
 
 const MAX = 0xffffffff;
 
-// files: [{ name, blob }]; onProgress(done files, all files). Gives a Blob of the zip.
+// files: [{ name, blob, crc? }]; onProgress(done files, all files). Gives a Blob of the zip.
 export async function zipBlob(files, onProgress = () => {}, zip64 = false) {
   const now = new Date();
   const time = (now.getHours() << 11) | (now.getMinutes() << 5) | (now.getSeconds() >> 1);
@@ -49,7 +49,8 @@ export async function zipBlob(files, onProgress = () => {}, zip64 = false) {
   let at = 0;
   for (const [i, f] of files.entries()) {
     const name = new TextEncoder().encode(f.name);
-    const size = f.blob.size, crc = await crc32(f.blob);
+    // the cut gives the CRC-32 of each file (it computes it while it writes); else one read of the file
+    const size = f.blob.size, crc = f.crc ?? await crc32(f.blob);
     const big = zip64 || size >= MAX || at >= MAX;
     // a local header: with ZIP64, the sizes are in the extra field
     const extra = big ? bytes([[1, 2], [16, 2], [size, 8], [size, 8]]) : new Uint8Array();

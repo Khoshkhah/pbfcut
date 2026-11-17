@@ -177,7 +177,12 @@ pub fn cut(
     let area = if grid == "areas" && boundary.is_none() { Boundary::parse(WORLD)? } else { area_of(&open, &boundary)? };
     let inside = if boundary.is_some() { &area } else { &world };
     let complete: Vec<&str> = complete.split(',').map(str::trim).filter(|t| !t.is_empty()).collect();
-    let mut sink = |t: u32, b: &[u8]| tile_write(t, b).map_err(|e| format!("a file in OPFS: {e:?}"));
+    // the CRC-32 of each file while it is written: the .zip of the page needs it, and so does not read the files again
+    let mut crcs: std::collections::HashMap<u32, crc32fast::Hasher> = Default::default();
+    let mut sink = |t: u32, b: &[u8]| {
+        crcs.entry(t).or_default().update(b);
+        tile_write(t, b).map_err(|e| format!("a file in OPFS: {e:?}"))
+    };
     let started = js_sys_now();
     // (the name of each tile or cell, its file name), and the numbers of elements
     let (names, counts): (Vec<(String, String)>, _) = if grid == "areas" {
@@ -201,7 +206,11 @@ pub fn cut(
         .enumerate()
         .filter(|(_, (_, c))| c.nodes > 0)
         .map(|(i, ((name, file), c))| {
-            format!(r#"{{"index":{i},"tile":"{name}","file":"{file}","nodes":{},"ways":{},"relations":{}}}"#, c.nodes, c.ways, c.relations)
+            let crc = crcs.get(&(i as u32)).map_or(0, |h| h.clone().finalize());
+            format!(
+                r#"{{"index":{i},"tile":"{name}","file":"{file}","nodes":{},"ways":{},"relations":{},"crc":{crc}}}"#,
+                c.nodes, c.ways, c.relations
+            )
         })
         .collect();
     Ok(format!(r#"{{"tiles":{},"files":[{}],"seconds":{}}}"#, names.len(), files.join(","), (js_sys_now() - started) / 1000.0))
