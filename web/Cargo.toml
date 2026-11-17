@@ -4,7 +4,7 @@ version = "0.2.2"
 edition = "2021"
 license = "MIT"
 publish = false
-description = "The online page of pbfcut: the cut in WebAssembly, with the temporary files in OPFS"
+description = "The browser page of pbfcut: the cut in WebAssembly, with the temporary files in OPFS"
 
 [lib]
 crate-type = ["cdylib"]

@@ -1,4 +1,4 @@
-"""The end-to-end test of the online page, with Playwright (Chromium), at desktop size and at phone size (390 x 844).
+"""The end-to-end test of the browser page, with Playwright (Chromium), at desktop size and at phone size (390 x 844).
 
     python3 web/e2e.py [--relay] [--shots DIR]
 

@@ -1,5 +1,5 @@
 #!/bin/sh
-# Build the online page into web/www/. Run it in the root of the repository.
+# Build the browser page into web/www/. Run it in the root of the repository.
 #   web/www/pkg/          one thread, stable Rust: for a browser that is not cross-origin isolated.
 #   web/www/pkg-threads/  rayon on Web Workers (wasm-bindgen-rayon). It needs nightly Rust with rust-src (the
 #                         standard library is built again with atomics). The maximum memory is 4 GiB.

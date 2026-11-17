@@ -54,7 +54,7 @@ nav:
       - Cut a file into tiles: tutorials/cut-to-tiles.md
       - Cut a file into H3 cells: tutorials/cut-to-h3-cells.md
       - Cut a file into your own areas: tutorials/cut-to-areas.md
-      - Cut a file in your browser: tutorials/online-page.md
+      - Cut a file in your browser: tutorials/browser-page.md
   - Reference:
       - The command line: reference/cli.md
       - Python: reference/python.md

@@ -25,7 +25,7 @@ Homepage = "https://github.com/Khoshkhah/pbfcut"
 Documentation = "https://khoshkhah.github.io/pbfcut/manual/reference/python/"
 Source = "https://github.com/Khoshkhah/pbfcut"
 Issues = "https://github.com/Khoshkhah/pbfcut/issues"
-"Online page" = "https://khoshkhah.github.io/pbfcut/"
+"Browser page" = "https://khoshkhah.github.io/pbfcut/"
 
 [tool.maturin]
 module-name = "pbfcut"

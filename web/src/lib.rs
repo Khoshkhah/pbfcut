@@ -1,4 +1,4 @@
-//! The online page of pbfcut: the tile cut in WebAssembly, in a Web Worker (`www/worker.js`). The worker owns the
+//! The browser page of pbfcut: the tile cut in WebAssembly, in a Web Worker (`www/worker.js`). The worker owns the
 //! browser objects: the input file, a pool of OPFS files for the temporary files, and the OPFS file of the tile files.
 //! This module keeps only numbers (a file number, a position), and calls the worker through the functions of the
 //! object `pbfcut` of the worker. The calls come only from the thread of the cut: the other threads of rayon decode and

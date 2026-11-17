@@ -48,7 +48,7 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: The end-to-end test of the online page (desktop and phone, on Monaco)
+      - name: The end-to-end test of the browser page (desktop and phone, on Monaco)
         run: |
           pip install playwright
           playwright install --with-deps chromium

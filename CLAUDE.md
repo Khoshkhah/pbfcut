@@ -30,7 +30,7 @@ cargo run --release -- compare DIR_A DIR_B           # exit 1 if the elements of
 
 `tiles` takes `--zoom Z` or `--tiles LIST.txt` (one `z/x/y` on each line, no tile inside another tile of the list). `--complete` sets the relation types that the cut keeps whole (default `multipolygon,boundary`). `--steps` prints the time of each step to standard error.
 
-The online page is in `web/` (a crate `pbfcut-web` with wasm-bindgen, and the page in `web/www/`). The worker owns the
+The browser page is in `web/` (a crate `pbfcut-web` with wasm-bindgen, and the page in `web/www/`). The worker owns the
 browser objects (the input file, a pool of 160 OPFS sync access handles for the temporary files, one OPFS file for the
 tile files). The module calls them only from the thread of the cut.
 

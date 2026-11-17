@@ -29,7 +29,7 @@ impl Hasher for FxHasher {
 pub type FxHashMap<K, V> = HashMap<K, V, BuildHasherDefault<FxHasher>>;
 pub type FxHashSet<K> = std::collections::HashSet<K, BuildHasherDefault<FxHasher>>;
 
-/// The hook of [`step`]: a program sets it to see the steps of the cut (the online page shows them). Without a hook,
+/// The hook of [`step`]: a program sets it to see the steps of the cut (the browser page shows them). Without a hook,
 /// a step costs one read of a static.
 pub static STEP_HOOK: std::sync::OnceLock<fn(&str)> = std::sync::OnceLock::new();
 

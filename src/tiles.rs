@@ -42,7 +42,7 @@ pub fn tiles(boundary: &Boundary, z: u8) -> Vec<Tile> {
 }
 
 /// [`tiles`], or none when there are more than `most` tiles: the search stops there (a plan that only needs to know
-/// whether a zoom has too many tiles, for example the online page with its limit of files).
+/// whether a zoom has too many tiles, for example the browser page with its limit of files).
 pub fn tiles_at_most(boundary: &Boundary, z: u8, most: usize) -> Option<Vec<Tile>> {
     let (w, s, e, n) = boundary.bbox();
     let (a, b) = (Tile::of(z, w, n), Tile::of(z, e, s));

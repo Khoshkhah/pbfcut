@@ -6,7 +6,7 @@ include it.
 Status (2026-11-16): M1 and M1b are done: the crate, the commands `tiles` and `compare`, the golden tests, CI, the
 manual, and the memory budget. From M2, these are done: `pbfcut h3 --res R` (H3 cells of one resolution), the command
 `areas` (GeoJSON and osmium config lists of areas that do not overlap) and the boundary formats (GeoJSON, `.poly`, WKT,
-`--bbox`). The Python binding is done (section 5.1). From M3, the online page cuts to tiles, H3 cells and areas. Not
+`--bbox`). The Python binding is done (section 5.1). From M3, the browser page cuts to tiles, H3 cells and areas. Not
 done: the list of cells of mixed resolutions (`--cells`), and on the page the CPU use.
 
 ## 1. Purpose
@@ -183,7 +183,7 @@ crate: the library and the command do not depend on it.
   Windows x86_64), tests each one, and publishes to PyPI on a tag `v*` with trusted publishing (environment `pypi`).
   The tag must equal the version in `python/Cargo.toml`.
 
-## 6. The manual, GitHub Pages and the online page
+## 6. The manual, GitHub Pages and the browser page
 
 The manual:
 
@@ -196,11 +196,11 @@ The manual:
 - Explanation: the rules of the cut, how the cut works, the comparison with osmium (with the commands to do the
   measurement again).
 
-GitHub Pages: `pages.yml` deploys the manual at `/pbfcut/manual/`, and from M3 the online page at `/pbfcut/`.
+GitHub Pages: `pages.yml` deploys the manual at `/pbfcut/manual/`, and from M3 the browser page at `/pbfcut/`.
 GitHub Pages cannot send the COOP and COEP headers that threads need, so the page uses `coi-serviceworker.js`.
 `?v=<sha>` on each relative reference stops the cache of Pages (10 minutes) from giving old files.
 
-The online page (M3):
+The browser page (M3):
 
 1. Choose a `.osm.pbf` file. The page reads it from the disk and does not upload it.
 2. Choose map tiles (a zoom), H3 cells (a resolution) or a GeoJSON file of areas, and an optional boundary.
@@ -239,7 +239,7 @@ command line.
 3. **M2, H3 cells and GeoJSON areas.** Done: the function "the areas of a point" for H3 and for area lists (the areas
    must not overlap), the commands `h3 --res` and `areas`, the boundary formats, their golden tests, and the
    measurements. Not done: `h3 --cells` (mixed resolutions).
-4. **M3, the online page** of section 6, on GitHub Pages. Done: map tiles, H3 cells and areas (a boundary in all
+4. **M3, the browser page** of section 6, on GitHub Pages. Done: map tiles, H3 cells and areas (a boundary in all
    formats, a border, the threads),
    a region of Geofabrik or a local file, the progress and the steps, "Save all to a folder", the e2e test
    (`web/e2e.py`). Geofabrik sends no CORS headers: the page gives a download link, and Get puts the

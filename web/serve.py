@@ -1,4 +1,4 @@
-"""Serve the online page (web/www) for a local test: python3 web/serve.py [PORT] (default 8800).
+"""Serve the browser page (web/www) for a local test: python3 web/serve.py [PORT] (default 8800).
 
 It sends no COOP and COEP headers, as GitHub Pages: the page gets them from its service worker. It has a relay for the
 files of download.geofabrik.de, which sends no CORS headers: open the page with ?relay=relay to use it.

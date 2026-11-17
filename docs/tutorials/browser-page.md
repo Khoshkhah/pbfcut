@@ -1,6 +1,6 @@
 # Cut a file in your browser
 
-The [online page](https://khoshkhah.github.io/pbfcut/) cuts a `.osm.pbf` file in your browser. You do not install
+The [browser page](https://khoshkhah.github.io/pbfcut/) cuts a `.osm.pbf` file in your browser. You do not install
 anything, and the file does not leave your computer.
 
 It works in each browser, also on a phone. Chrome and Edge on a computer can also save all files into a folder.

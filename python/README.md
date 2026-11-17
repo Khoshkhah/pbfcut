@@ -5,7 +5,7 @@ complete `.osm.pbf` file: each way comes with all its nodes, and each multipolyg
 
 The cut is the Rust code of pbfcut. This package runs it from Python, and gives the same files as the command line.
 
-**Try it online:** <https://khoshkhah.github.io/pbfcut/>. The same cut in the browser, with no installation. The file
+**Try it in the browser:** <https://khoshkhah.github.io/pbfcut/>. The same cut in the browser, with no installation. The file
 stays on your computer.
 
 - **Fast, with little memory.** Faster than `osmium extract`, with much less memory, also for thousands of tiles.
@@ -74,5 +74,5 @@ The memory is the peak RSS. All numbers are in [the comparison](https://khoshkha
 
 - [The Python reference](https://khoshkhah.github.io/pbfcut/manual/reference/python/)
 - [The manual](https://khoshkhah.github.io/pbfcut/manual/): tutorials, the command line, and how the cut works
-- [The online page](https://khoshkhah.github.io/pbfcut/): the same cut in the browser, with no installation
+- [The browser page](https://khoshkhah.github.io/pbfcut/): the same cut in the browser, with no installation
 - [The source code](https://github.com/Khoshkhah/pbfcut) (MIT license)
