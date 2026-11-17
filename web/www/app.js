@@ -485,7 +485,7 @@ function showPlan({ plan, error, hint }) {
     tooMany = kind() !== "areas" && plan.count > MAX_FILES;
     text.classList.toggle("bad", tooMany);
     text.textContent = tooMany
-      ? `${plan.count.toLocaleString("en")} ${word}s: this page cuts at most ${MAX_FILES.toLocaleString("en")}. Choose a lower ${kind() === "h3" ? "resolution" : "zoom"} or a smaller boundary.`
+      ? `More than ${MAX_FILES.toLocaleString("en")} ${word}s: this page cuts at most ${MAX_FILES.toLocaleString("en")}. Choose a lower ${kind() === "h3" ? "resolution" : "zoom"} or a smaller boundary.`
       : lowered + `${plan.count.toLocaleString("en")} ${word}${s}${where}.`
         + (kind() === "areas" ? "" : ` Only the ${word}s with data get a file.`);
     // too many: only the boundary (a part of the outlines looks like a cut of a part of the area)

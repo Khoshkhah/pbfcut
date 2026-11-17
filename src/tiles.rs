@@ -38,18 +38,26 @@ impl Tile {
 
 /// The tiles of zoom `z` that the boundary touches, in the order of the build: south to north, then west to east.
 pub fn tiles(boundary: &Boundary, z: u8) -> Vec<Tile> {
+    tiles_at_most(boundary, z, usize::MAX).expect("no limit")
+}
+
+/// [`tiles`], or none when there are more than `most` tiles: the search stops there (a plan that only needs to know
+/// whether a zoom has too many tiles, for example the online page with its limit of files).
+pub fn tiles_at_most(boundary: &Boundary, z: u8, most: usize) -> Option<Vec<Tile>> {
     let (w, s, e, n) = boundary.bbox();
     let (a, b) = (Tile::of(z, w, n), Tile::of(z, e, s));
-    let mut out: Vec<Tile> = (a.y..=b.y)
-        .rev()
-        .flat_map(|y| (a.x..=b.x).map(move |x| Tile { z, x, y }))
-        .filter(|t| {
-            let (w, s, e, n) = t.bounds();
-            boundary.touches_box(w, s, e, n)
-        })
-        .collect();
+    let mut out = Vec::new();
+    for t in (a.y..=b.y).rev().flat_map(|y| (a.x..=b.x).map(move |x| Tile { z, x, y })) {
+        let (w, s, e, n) = t.bounds();
+        if boundary.touches_box(w, s, e, n) {
+            out.push(t);
+            if out.len() > most {
+                return None;
+            }
+        }
+    }
     out.sort_by_key(|t| (std::cmp::Reverse(t.y), t.x));
-    out
+    Some(out)
 }
 
 #[cfg(test)]
@@ -63,6 +71,19 @@ mod tests {
         assert_eq!((t.x, t.y), (268, 394));
         let (w, s, e, n) = t.bounds();
         assert!(w <= -85.7585 && -85.7585 < e && s < 38.2527 && 38.2527 <= n);
+    }
+
+    /// The list with a limit is the list, or none above the limit.
+    #[test]
+    fn a_limit_stops_the_list() {
+        let b = Boundary::parse("7.40,43.72,7.45,43.76").unwrap();
+        let all = tiles(&b, 16);
+        assert_eq!(tiles_at_most(&b, 16, all.len()), Some(all.clone()));
+        assert_eq!(tiles_at_most(&b, 16, all.len() - 1), None);
+        let res = crate::cells::Resolution::Ten;
+        let all = crate::cells::cells(&b, res);
+        assert_eq!(crate::cells::cells_at_most(&b, res, all.len()), Some(all.clone()));
+        assert_eq!(crate::cells::cells_at_most(&b, res, all.len() - 1), None);
     }
 
     #[test]
