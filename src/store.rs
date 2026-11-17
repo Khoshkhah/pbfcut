@@ -64,8 +64,8 @@ impl Seek for TempFile {
     }
 }
 
-/// The memory budget of the cut in bytes (default 2 GiB): each part of the cut takes its share of it.
-static MEMORY: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(2 << 30);
+/// The memory budget of the cut in bytes (0: not set, then [`default_memory`]): each part of the cut takes its share of it.
+static MEMORY: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
 
 /// Set the memory budget of the cut, in bytes.
 pub fn set_memory(bytes: usize) {
@@ -74,7 +74,37 @@ pub fn set_memory(bytes: usize) {
 
 /// The memory budget of the cut, in bytes.
 pub fn memory() -> usize {
-    MEMORY.load(Ordering::Relaxed)
+    match MEMORY.load(Ordering::Relaxed) {
+        0 => default_memory(),
+        m => m,
+    }
+}
+
+/// The default memory budget: a quarter of the physical memory, at least 2 GiB. A larger budget sorts less on disk:
+/// Sweden at zoom 12 takes 65 s with 2G and 56 s with 4G (docs/explanation/speed-and-memory.md). A quarter keeps the
+/// peak RSS (about 1.5 to 2 times the heap) well below the physical memory.
+pub fn default_memory() -> usize {
+    static DEFAULT: std::sync::OnceLock<usize> = std::sync::OnceLock::new();
+    *DEFAULT.get_or_init(|| (physical_memory() / 4).max(2 << 30))
+}
+
+/// The physical memory in bytes; 0 when it is not known.
+// ponytail: Linux and macOS only; Windows and WebAssembly get 0 (then 2 GiB). Add GlobalMemoryStatusEx when Windows needs it.
+fn physical_memory() -> usize {
+    #[cfg(target_os = "linux")]
+    {
+        let kib = std::fs::read_to_string("/proc/meminfo").ok().and_then(|t| {
+            t.lines().find(|l| l.starts_with("MemTotal:"))?.split_whitespace().nth(1)?.parse::<usize>().ok()
+        });
+        return kib.unwrap_or(0).saturating_mul(1024);
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let out = std::process::Command::new("/usr/sbin/sysctl").args(["-n", "hw.memsize"]).output().ok();
+        return out.and_then(|o| String::from_utf8(o.stdout).ok()?.trim().parse().ok()).unwrap_or(0);
+    }
+    #[allow(unreachable_code)]
+    0
 }
 
 /// The folder of the temporary files (native); none: the temporary folder of the system.
@@ -629,6 +659,14 @@ mod tests {
 
     fn keys() -> Vec<i64> {
         (0..5000).map(|i| (i * 7919) % 5000 - 1300).collect()
+    }
+
+    /// The default budget is at least 2 GiB, and a quarter of the physical memory when that is larger.
+    #[test]
+    fn default_budget() {
+        let m = default_memory();
+        assert!(m >= 2 << 30);
+        assert!(physical_memory() == 0 || m >= physical_memory() / 4);
     }
 
     /// The sort with a small budget (many runs, merged) gives the rows in the order of the key.

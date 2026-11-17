@@ -1,8 +1,9 @@
 # Speed and memory
 
-The memory of the cut follows its memory budget (`--memory`, default 2G), not the number of tiles. All numbers are
+The memory of the cut follows its memory budget (`--memory`, default a quarter of the physical memory, at least 2G), not the number of tiles. All numbers are
 from a Mac mini (12 cores, 16 GB) with the Geofabrik files of Sweden (975 MB) and France (5.1 GB), with pbfcut
-0.2.0 on 2026-11-16, one run at a time. For osmium and the online page, see [Comparison](comparison.md).
+0.2.0 on 2026-11-16, one run at a time, with the budget 2G when the table shows no other budget. For osmium and the
+online page, see [Comparison](comparison.md).
 
 - **Heap**: the most memory that the cut used (from `--steps`).
 - **RSS**: the most memory that the system gave to the process. It is larger, because the allocator keeps some freed
@@ -56,18 +57,18 @@ keep or send.
 | File | Cut | `--memory` | Time | Peak RSS | Peak heap |
 |---|---|---|---|---|---|
 | Sweden | zoom 12 | 512M | 89.6 s | 2,727 MiB | 838 MiB |
-| Sweden | zoom 12 | 2G (default) | 65.2 s | 4,349 MiB | 1,647 MiB |
-| Sweden | zoom 12 | 4G | 55.6 s | 5,625 MiB | 3,012 MiB |
+| Sweden | zoom 12 | 2G | 65.2 s | 4,349 MiB | 1,647 MiB |
+| Sweden | zoom 12 | 4G (the default on 16 GB) | 55.6 s | 5,625 MiB | 3,012 MiB |
 | Sweden | zoom 12 | 8G | 44.5 s | 4,860 MiB | 3,516 MiB |
 | Sweden | resolution 6 | 512M | 114.6 s | 2,594 MiB | 741 MiB |
-| Sweden | resolution 6 | 2G (default) | 93.6 s | 4,564 MiB | 1,610 MiB |
+| Sweden | resolution 6 | 2G | 93.6 s | 4,564 MiB | 1,610 MiB |
 | France | zoom 10 | 512M | 108.0 s | 3,464 MiB | 770 MiB |
-| France | zoom 10 | 2G (default) | 84.5 s | 4,539 MiB | 1,753 MiB |
-| France | zoom 10 | 4G | 74.8 s | 3,753 MiB | 1,896 MiB |
+| France | zoom 10 | 2G | 84.5 s | 4,539 MiB | 1,753 MiB |
+| France | zoom 10 | 4G (the default on 16 GB) | 74.8 s | 3,753 MiB | 1,896 MiB |
 | France | zoom 10 | 8G | 76.4 s | 3,976 MiB | 2,062 MiB |
 
 A smaller budget sorts more data on disk, so the cut takes 1.2 to 1.4 times longer. A larger budget helps only a cut
-that fills the default budget: with 8G, Sweden at zoom 12 is 1.5 times faster, and France at zoom 10 is 1.1 times
+that fills 2G: with 8G, Sweden at zoom 12 is 1.5 times faster, and France at zoom 10 is 1.1 times
 faster. The cuts at zoom 8 and lower use less than 1 GiB of heap, so a larger budget does not change them. The files
 are the same with each budget. The lists of the nodes and the ways do not follow the budget (France: about 250 MB), so
 France needs about 770 MiB of heap also with `--memory 512M`.
