@@ -208,7 +208,8 @@ The online page (M3):
 4. Start the cut. It runs in WebAssembly with threads, in a worker. The temporary files go to OPFS.
 5. See the progress: for each step, the time, the CPU use and the WebAssembly memory. A Stop button stops the cut.
 6. Download the files. In Chromium on a computer, into a folder that you choose (`showDirectoryPicker`); else as one
-   `.zip` file with no compression (the PBF blocks are already compressed).
+   `.zip` file with no compression (the PBF blocks are already compressed). The cut computes the CRC-32 of each
+   file while it writes the file (`crc32fast` in the sink of `web/src/lib.rs`), so the `.zip` reads no file again.
 
 The CPU use of a step is the busy time of all threads divided by the time of the step and the number of threads. The
 map is MapLibre GL from a CDN, with a free OpenStreetMap base map and the outlines of the tiles, cells or areas: the

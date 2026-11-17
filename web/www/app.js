@@ -700,7 +700,7 @@ $("zip").addEventListener("click", async () => {
   $("zip").disabled = true;
   const start = performance.now();
   try {
-    const blob = await zipBlob(files.map((f) => ({ name: f.file, blob: new Blob(f.parts.map(([s, n]) => all.slice(s, s + n))) })),
+    const blob = await zipBlob(files.map((f) => ({ name: f.file, crc: f.crc, blob: new Blob(f.parts.map(([s, n]) => all.slice(s, s + n))) })),
       (i, n) => { $("save-text").textContent = `Making the .zip: ${i} of ${n} files`; }, self.zip64ForTest === true);
     const name = `pbfcut-${{ tiles: `zoom-${$("zoom").value}`, h3: `h3-${$("res").value}`, areas: "areas" }[kind()]}.zip`;
     const url = URL.createObjectURL(blob);
