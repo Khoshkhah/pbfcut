@@ -39,18 +39,18 @@ Other programs used the Mac during these runs, so the times can be a little long
 | Monaco | 3 | 0.04 s | 24 MiB | 11 MiB |
 | Sweden | 10 boxes | 11.7 s | 848 MiB | 350 MiB |
 
-## Compression off
+## zlib compression off
 
-With `--no-compression` (Python: `compress=False`; the page: "Compress the files" off), the files have raw blocks, not
+With `--no-compression` (Python: `compress=False`; the page: "zlib compression" off), the files have raw blocks, not
 zlib blocks. The elements are the same.
 
-| Cut | Compression on | Compression off |
+| Cut | zlib compression on | zlib compression off |
 |---|---|---|
 | Sweden, zoom 8, command line | 12.7 s, 1,000 MB | 9.3 to 9.8 s, 1,619 MB |
 | Sweden, zoom 8, online page | 20.8 s, 942 MiB | 16.9 s, 1,536 MiB |
 | Monaco, zoom 14, command line | 0.04 s, 1 MB | 0.03 s, 2 MB |
 
-Measured on 2026-11-16 on the Mac mini, while other programs used it (load about 6). Use compression off for files
+Measured on 2026-11-16 on the Mac mini, while other programs used it (load about 6). Use zlib compression off for files
 that a program reads one time, soon after the cut; keep it on for files that people keep or send.
 
 ## A smaller memory budget

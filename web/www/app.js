@@ -95,7 +95,7 @@ const HELP = {
     ["Resolution", "The mean area of an H3 cell."],
     ["Border", "Each file also gets the data this many metres around its tile or cell."],
     ["Threads", "The number of threads of the cut. Default: the number of cores."],
-    ["Compress the files", "On (default): normal .osm.pbf files with zlib blocks, best to keep or to save. Off: raw blocks; the cut is about 20 % faster and the files are about 1.6 times larger (Sweden, zoom 8: 16.9 s and 1.5 GiB, against 20.8 s and 0.9 GiB). Each OSM program reads both."],
+    ["zlib compression", "On (default): normal .osm.pbf files with zlib blocks, best to keep or to save. Off: raw blocks; the cut is about 20 % faster and the files are about 1.6 times larger (Sweden, zoom 8: 16.9 s and 1.5 GiB, against 20.8 s and 0.9 GiB). Each OSM program reads both."],
     ["Boundary", "Optional: a GeoJSON, .poly (osmosis) or WKT file; the cut keeps only the data inside it. Without it, a Geofabrik region (also a local file with the name of a Geofabrik file) uses the outline of the region; another file uses its bounding box."],
     ["GeoJSON", "In longitude and latitude (WGS 84): a Polygon, a MultiPolygon, a Feature or a FeatureCollection."],
   ]],
