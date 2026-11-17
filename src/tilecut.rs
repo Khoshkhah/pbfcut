@@ -446,14 +446,18 @@ fn tiles_in(pairs: &[(i64, u32)], id: i64) -> impl Iterator<Item = u32> + '_ {
 
 /// The ways of a block with their nodes.
 #[derive(Default)]
-struct WayRefs {
+struct WayRefs<'w> {
+    /// only these ways (sorted), when the list fits the memory budget; else all ways of the block
+    wanted: Option<&'w [i64]>,
     found: Vec<(i64, Vec<i64>)>,
 }
 
-impl RawSink for WayRefs {
+impl RawSink for WayRefs<'_> {
     fn node<'a>(&mut self, _: i64, _: f64, _: f64, _: &mut dyn Iterator<Item = (&'a str, &'a str)>) {}
     fn way<'a>(&mut self, id: i64, _: &mut dyn Iterator<Item = (&'a str, &'a str)>, refs: &mut dyn Iterator<Item = i64>) {
-        self.found.push((id, refs.collect()));
+        if self.wanted.is_none_or(|w| w.binary_search(&id).is_ok()) {
+            self.found.push((id, refs.collect()));
+        }
     }
     fn relation<'a>(
         &mut self,
@@ -1812,14 +1816,30 @@ fn cut<R: Read + Seek + Send>(
                 }
             }
         }
+        // the ways of the pairs, so that a block gives only them: a list of all ways of each block (France: 73 million) made
+        // this step 2 s slower. The list is 8 bytes for each way; when it does not fit an eighth of the memory budget,
+        // each block gives all its ways, as before.
+        let wanted: Option<Vec<i64>> = if more.len.saturating_mul(8) <= crate::store::memory() / 8 {
+            let mut w = Vec::new();
+            for x in more.read_ref(&Pair).map_err(io)? {
+                let id = x.map_err(io)?.0;
+                if w.last() != Some(&id) {
+                    w.push(id);
+                }
+            }
+            Some(w)
+        } else {
+            None
+        };
         let mut rows = more.read_ref(&Pair).map_err(io)?.peekable();
         let mut err = None;
         each_block_at(
             &mut open()?,
             &at,
             |b, buf| {
-                let mut s = WayRefs::default();
-                decode_block(b, [false, true, false], buf, &mut s)?;
+                let mut s = WayRefs { wanted: wanted.as_deref(), found: Vec::new() };
+                // the node lists only: no tags
+                crate::decode::decode_block_tags(b, [false, true, false], [false; 3], buf, &mut s)?;
                 Ok(s.found)
             },
             |found| {
