@@ -1,7 +1,7 @@
 name: Python
 
 # The wheels of the Python binding (python/): build them, test them with pytest against the command line, and publish
-# them to PyPI on a version tag (v0.2.0) with trusted publishing (the environment "pypi").
+# them to PyPI on a version tag (v0.2.1) with trusted publishing (the environment "pypi").
 on:
   push:
     branches: [main]
