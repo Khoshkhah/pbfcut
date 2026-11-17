@@ -117,9 +117,17 @@ def main():
             # the region search: one match is chosen at once; more matches: a list, Enter takes the first, the arrows and
             # Tab take another; Esc closes the list
             region_value = lambda: page.input_value("#region")
+            # letter by letter: "esto" is already unique; the region is chosen, and the next letters go on as typed
+            page.fill("#region", "")
+            page.click("#region")
+            page.keyboard.type("estoni", delay=30)
+            assert region_value() == "estoni" and page.is_visible("#region-actions"), region_value()
+            page.keyboard.press("Tab")
+            assert region_value() == "Europe / Estonia", region_value()
             page.fill("#region", "mona")
-            page.wait_for_function("document.querySelector('#region').value === 'Europe / Monaco'")
-            assert page.is_visible("#region-actions") and page.is_hidden("#region-list")
+            page.wait_for_selector("#region-actions:not([hidden])")
+            page.press("#region", "Enter")
+            assert region_value() == "Europe / Monaco" and page.is_hidden("#region-list"), region_value()
             page.fill("#region", "georgia")
             page.wait_for_selector("#region-list:not([hidden])")
             options = page.locator("#region-list li").all_text_contents()

@@ -149,9 +149,12 @@ function findRegions() {
   const words = q.split(/[\s/,]+/).filter(Boolean);
   matches = !words.length ? [] : regions.filter((x) => words.every((w) => x.key.includes(w)))
     .sort((a, b) => rank(a, words) - rank(b, words) || a.label.length - b.label.length);
-  if (matches.length === 1) return pickRegion(matches[0]);
-  if (region) setRegion(null);
   active = 0;
+  // one match: the region is chosen at once, but the text stays as typed (the next letters go on after it); the field
+  // gets the full name at Enter, Tab, a click, or when it loses the focus
+  if (matches.length === 1) {
+    if (region !== matches[0]) setRegion(matches[0]);
+  } else if (region) setRegion(null);
   showMatches(q !== "");
 }
 function showMatches(open) {
@@ -186,7 +189,10 @@ $("region").addEventListener("keydown", (e) => {
     pickRegion(matches[active]);
   } else if (e.key === "Escape") showMatches(false);
 });
-$("region").addEventListener("blur", () => showMatches(false));
+$("region").addEventListener("blur", () => {
+  if (region) $("region").value = region.label;
+  showMatches(false);
+});
 // the region of the input: the buttons Get and Download, and whether its file is in the storage of this site
 async function setRegion(x) {
   resetNote();
