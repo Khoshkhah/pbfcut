@@ -17,7 +17,25 @@ function writeAll(h, buf, at) {
   }
   return buf.length;
 }
-let input, out, outEnd = 0, last = -1, memory = null;
+let input, out, outEnd = 0, memory = null;
+const PIECE = 4 << 20, HELD = 64 << 20;
+const held = new Map();      // tile -> { chunks, n }: the bytes that wait
+let heldBytes = 0;
+// the bytes that wait of tile t to the end of the file; a part that follows the last part of the tile makes it longer
+function flushTile(t) {
+  const h = held.get(t);
+  if (!h) return;
+  held.delete(t);
+  heldBytes -= h.n;
+  const b = h.chunks.length === 1 ? h.chunks[0] : new Uint8Array(h.n);
+  if (h.chunks.length > 1) { let o = 0; for (const c of h.chunks) { b.set(c, o); o += c.length; } }
+  if (!parts.has(t)) parts.set(t, []);
+  const p = parts.get(t), lastPart = p[p.length - 1];
+  if (lastPart && lastPart[0] + lastPart[1] === outEnd) lastPart[1] += b.length;
+  else p.push([outEnd, b.length]);
+  writeAll(out, b, outEnd);
+  outEnd += b.length;
+}
 
 self.pbfcut = {
   input_read(at, buf) {
@@ -35,16 +53,17 @@ self.pbfcut = {
   temp_read: (i, at, buf) => pool[i].read(buf, { at }),
   temp_write: (i, at, buf) => writeAll(pool[i], buf, at),
   temp_drop: (i) => { free.push(i); },
+  // the bytes of a tile wait in memory until 4 MiB (all tiles: at most 64 MiB): the cut gives a tile some 100 KB at a
+  // time, mixed with the other tiles, and one part for each piece made France at zoom 8 73,356 parts; a page that
+  // makes a Blob of each part (the .zip, Save all) was blocked for seconds
   tile_write(t, buf) {
-    if (t !== last) {
-      if (!parts.has(t)) parts.set(t, []);
-      parts.get(t).push([outEnd, 0]);
-      last = t;
-    }
-    writeAll(out, buf, outEnd);
-    const p = parts.get(t);
-    p[p.length - 1][1] += buf.length;
-    outEnd += buf.length;
+    let h = held.get(t);
+    if (!h) held.set(t, (h = { chunks: [], n: 0 }));
+    h.chunks.push(buf.slice());      // a copy: buf is a view of the WebAssembly memory
+    h.n += buf.length;
+    heldBytes += buf.length;
+    if (h.n >= PIECE) flushTile(t);
+    if (heldBytes > HELD) for (const [u] of [...held].sort((a, b) => b[1].n - a[1].n)) { flushTile(u); if (heldBytes <= HELD / 2) break; }
   },
   step: (name) => postMessage({ type: "step", name, t: performance.now(), memory: memory?.buffer.byteLength }),
 };
@@ -108,6 +127,7 @@ onmessage = async ({ data: o }) => {
     }
     postMessage({ type: "stage", name: "cut", t: performance.now() });
     const report = JSON.parse(m.cut(size, o.kind, o.level, o.boundary, o.border, o.complete, 0, o.areas, o.compress));
+    for (const t of [...held.keys()]) flushTile(t);
     out.flush();
     out.close();
     for (const h of pool) h.close();

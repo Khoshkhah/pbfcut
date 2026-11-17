@@ -44,6 +44,7 @@ The files are equal to the files of the [command line](../reference/cli.md) with
 
 ## Notes
 
+- **Cancel** stops a **Get** or a **Download**; no part of the file stays.
 - **Get** downloads the file from Geofabrik through a small relay, because Geofabrik does not let other web pages
   read its files. **Download** saves the file on your computer instead: in Chrome and Edge it is as fast as **Get**.
 - The first time that you open the page, it loads two times. This lets the cut use all the cores of the computer.
