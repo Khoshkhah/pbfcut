@@ -144,7 +144,7 @@ dependencies = [
 
 [[package]]
 name = "pbfcut"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "flate2",
  "h3o",
@@ -155,7 +155,7 @@ dependencies = [
 
 [[package]]
 name = "pbfcut-py"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "pbfcut",
  "pyo3",
