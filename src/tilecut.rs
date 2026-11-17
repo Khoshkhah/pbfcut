@@ -1282,6 +1282,49 @@ fn write_junctions(parts: &Parts, tile: u32, out: &Path) -> Result<(), String> {
     f.flush().map_err(e)
 }
 
+/// The tile that holds the place of each node of `homes` (sorted by node), when that tile has a file: the node blocks of the
+/// file (`blocks`, with the span of the ids of each) are read only where a block has one of these nodes. The nodes outside the
+/// area of the kept ways are few (the ways across the border), so the cut reads few blocks again.
+fn home_places<R: Read + Seek>(
+    r: &mut R,
+    blocks: &[(u64, Span)],
+    homes: &[(i64, i64, u32)],
+    grid: &Grid,
+    with_file: &[bool],
+) -> Result<FxHashMap<i64, u32>, String> {
+    struct Find<'a> {
+        ids: &'a [i64],
+        grid: &'a Grid<'a>,
+        with_file: &'a [bool],
+        out: &'a mut FxHashMap<i64, u32>,
+    }
+    impl RawSink for Find<'_> {
+        fn node<'a>(&mut self, id: i64, lat: f64, lon: f64, _: &mut dyn Iterator<Item = (&'a str, &'a str)>) {
+            if self.ids.binary_search(&id).is_ok() {
+                if let Some(t) = self.grid.of(lon, lat).filter(|&t| self.with_file[t as usize]) {
+                    self.out.insert(id, t);
+                }
+            }
+        }
+        fn way<'a>(&mut self, _: i64, _: &mut dyn Iterator<Item = (&'a str, &'a str)>, _: &mut dyn Iterator<Item = i64>) {}
+        fn relation<'a>(&mut self, _: i64, _: &mut dyn Iterator<Item = (&'a str, &'a str)>, _: &mut dyn Iterator<Item = (i64, MemberType, &'a str)>) {}
+    }
+    let mut ids: Vec<i64> = homes.iter().map(|h| h.0).collect();
+    ids.dedup();
+    let mut out = FxHashMap::default();
+    let mut buf = Buffers::default();
+    for &(at, (lo, hi)) in blocks {
+        let k = ids.partition_point(|&i| i < lo);
+        if k == ids.len() || ids[k] > hi {
+            continue;
+        }
+        r.seek(SeekFrom::Start(at)).map_err(|e| e.to_string())?;
+        let b = read_block(r)?.ok_or("a node block after the end of the file")?;
+        decode_block(&b, [true, false, false], &mut buf, &mut Find { ids: &ids, grid, with_file, out: &mut out })?;
+    }
+    Ok(out)
+}
+
 /// Read a junctions file of the tile cut: (node id, flags).
 pub fn read_junctions(path: &Path) -> Result<Vec<(i64, u8)>, String> {
     let b = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
@@ -1754,16 +1797,19 @@ fn cut<R: Read + Seek + Send>(
     parts.flush()?;
     ways.finish();
     tidy(&mut multi);
-    // the home tile of each node outside the area: no tile holds it, so the first tile (in the order of the tiles) of the ways
-    // at the node gets all these ways, and holds the node (its turns, its rows). Not in a cut to an area list: an area file
-    // gets only the ways with a node inside it, as in osmium
+    // the home tile of each node outside the area: no tile holds it, so one tile gets all the ways at the node, and holds the
+    // node (its turns, its rows): the tile that holds the place of the node, when that tile has a file (a program that makes
+    // rows near its tile, as the connector of the dangling paths of duckOSM, then makes all rows of the node), else the first
+    // tile (in the order of the tiles) of the ways at the node. Not in a cut to an area list: an area file gets only the ways
+    // with a node inside it, as in osmium
     if let Grid::Areas { .. } = grid {
         homes.clear();
     }
     homes.sort_unstable();
+    let places = home_places(&mut open()?, &node_blocks, &homes, grid, &with_file)?;
     let (mut home_ways, mut home_nodes): (Vec<(i64, u32)>, Vec<(i64, u32)>) = (Vec::new(), Vec::new());
     for run in homes.chunk_by(|a, b| a.0 == b.0) {
-        let home = run.iter().map(|h| h.2).min().expect("a run");
+        let home = places.get(&run[0].0).copied().unwrap_or_else(|| run.iter().map(|h| h.2).min().expect("a run"));
         home_nodes.push((run[0].0, home));
         for &(_, w, first) in run {
             let multi_tiles: Vec<u32> = tiles_in(&multi, w).collect();

@@ -96,6 +96,12 @@ the code shorter, not faster.
 With it, the cut writes for each tile a file of the nodes outside the tile with their flags, and the flag `HOME` when
 the tile has all the ways of the node. The cut itself does not know about roads.
 
+The home tile (or cell) of a node outside the area is the tile that holds the place of the node, when that tile has a file.
+Else it is the first tile (in the order of the tiles) of the ways at the node. The cut reads again only the node blocks
+with such nodes (they are few: the ways across the border). A program that makes rows near its own tile, for example the
+connector of the dangling paths of duckOSM, then makes all rows of the node. Before 2026-11-17 the home was always the first
+tile of the ways: in Tartu by tiles, a connector edge was lost, because the home of its node was the other tile.
+
 ## 4. The memory budget
 
 Requirements:

@@ -1,19 +1,19 @@
 # The reference tile files of tests/data/monaco.osm.pbf (pbfcut after full blocks for each tile; the elements equal those of pbfcut 11276bc): variant, file, FNV-1a 64 and size of the blocks after the header
-tiles-z14 14_8529_5974.osm.pbf f8cdd9e21fc605fb 397675
+tiles-z14 14_8529_5974.osm.pbf 09d186fbc6557901 396824
 tiles-z14 14_8530_5974.osm.pbf 55e2f715d155e09a 78492
-tiles-z14 14_8529_5973.osm.pbf 63bb804a90dc91aa 134072
-tiles-z14 14_8530_5973.osm.pbf 54e318654a0c9586 212600
-tiles-z15-border25 15_17058_11949.osm.pbf e69f89d46d09d6a3 128830
+tiles-z14 14_8529_5973.osm.pbf c7d083135976702e 137304
+tiles-z14 14_8530_5973.osm.pbf de154f0570a847db 213694
+tiles-z15-border25 15_17058_11949.osm.pbf 87114178b7c5b9a4 129977
 tiles-z15-border25 15_17059_11949.osm.pbf 7ce07190d1d40062 183919
 tiles-z15-border25 15_17060_11949.osm.pbf f4194e730af20257 23460
 tiles-z15-border25 15_17058_11948.osm.pbf 7c903b3930a56ad2 142344
-tiles-z15-border25 15_17059_11948.osm.pbf f7f2653b2654461e 286559
+tiles-z15-border25 15_17059_11948.osm.pbf db76b72c791318b3 285543
 tiles-z15-border25 15_17060_11948.osm.pbf bd9ce73a19100b3a 82201
-tiles-z15-border25 15_17059_11947.osm.pbf 4677720f75065ed2 141499
-tiles-z15-border25 15_17060_11947.osm.pbf b8812002bfe34fa3 184348
-tiles-z15-border25 15_17061_11947.osm.pbf a6e46898b67438d7 22640
-tiles-z15-border25 15_17060_11946.osm.pbf 4699322f94a1d4e7 134167
-tiles-z15-border25 15_17061_11946.osm.pbf f027c0e10e5ea891 102535
+tiles-z15-border25 15_17059_11947.osm.pbf 2c469dcb37831ddf 144430
+tiles-z15-border25 15_17060_11947.osm.pbf 6f0a121b9521a6d5 185352
+tiles-z15-border25 15_17061_11947.osm.pbf 1cc351ec20016818 24707
+tiles-z15-border25 15_17060_11946.osm.pbf f1273c4809b9d4a8 135454
+tiles-z15-border25 15_17061_11946.osm.pbf 21009392f72fe1ec 103625
 store-z14 14_8529_5974.osm.pbf 633094c6a2f75452 724994
 store-z14 14_8530_5974.osm.pbf 5068895039f503af 169635
 store-z14 14_8529_5973.osm.pbf dc135259f84d52a7 302813
@@ -28,3 +28,4 @@ area monaco.osm.pbf 40b041ac5e2fc2f3 552499
 areas west.osm.pbf 898229ed422384ef 282729
 areas east.osm.pbf 518bcd0b7424a3b4 401871
 areas inner.osm.pbf 190e7f2c47ec4fd7 34657
+# 2026-11-17: the home of a node outside the area is the tile that holds its place (else the first tile of its ways); Kaveh agreed to the new hashes
