@@ -154,7 +154,8 @@ fn setup(size: f64, memory_mib: u32) -> impl Fn() -> Result<io::BufReader<Input>
 /// resolution `level` (`grid` "h3"), or into the areas of the GeoJSON `areas` (`grid` "areas", one file for each
 /// feature, named by its property "name", as `pbfcut areas`), inside `boundary` (GeoJSON; none: the bounding box in the header of the file).
 /// `border_m`: the border of each file in metres. `complete`: the types of the relations to complete, separated by
-/// commas. `memory_mib`: the memory budget of the cut (0: the default of the library). The files go to
+/// commas. `memory_mib`: the memory budget of the cut (0: the default of the library). `compress`: zlib blocks; false: raw
+/// blocks (a faster cut, larger files with the same elements). The files go to
 /// `pbfcut.tile_write`. Gives the JSON report of the command `pbfcut tiles` or `pbfcut h3`, with the number of each file.
 #[wasm_bindgen]
 #[allow(clippy::too_many_arguments)]
@@ -167,6 +168,7 @@ pub fn cut(
     complete: &str,
     memory_mib: u32,
     areas: Option<String>,
+    compress: bool,
 ) -> Result<String, JsValue> {
     let open = setup(size, memory_mib);
     let area = area_of(&open, &boundary)?;
@@ -179,16 +181,16 @@ pub fn cut(
     let (names, counts): (Vec<(String, String)>, _) = if grid == "areas" {
         let text = areas.ok_or("give the GeoJSON file of the areas")?;
         let list = pbfcut::areas::AreaList::parse(&text, "name", &|f| Err(format!("{f}: the page reads one GeoJSON file only")))?;
-        let counts = pbfcut::tilecut::cut_areas_to_sink(open, inside, &list, &complete, &mut sink)?;
+        let counts = pbfcut::tilecut::cut_areas_to_sink(open, inside, &list, &complete, compress, &mut sink)?;
         (list.areas.iter().map(|a| (a.name.clone(), format!("{}.osm.pbf", a.name))).collect(), counts)
     } else if grid == "h3" {
         let res = pbfcut::cells::Resolution::try_from(level).map_err(|e| format!("the H3 resolution {level}: {e}"))?;
         let list = pbfcut::cells::cells(&area, res);
-        let counts = pbfcut::tilecut::cut_cells_to_sink(open, inside, &list, &complete, border_m, &mut sink)?;
+        let counts = pbfcut::tilecut::cut_cells_to_sink(open, inside, &list, &complete, border_m, compress, &mut sink)?;
         (list.iter().map(|c| (c.to_string(), format!("{c}.osm.pbf"))).collect(), counts)
     } else {
         let list = pbfcut::tiles::tiles(&area, level);
-        let counts = pbfcut::tilecut::cut_to_sink(open, inside, &list, &complete, border_m, &mut sink)?;
+        let counts = pbfcut::tilecut::cut_to_sink(open, inside, &list, &complete, border_m, compress, &mut sink)?;
         (list.iter().map(|t| (t.name(), format!("{}_{}_{}.osm.pbf", t.z, t.x, t.y))).collect(), counts)
     };
     let files: Vec<String> = names

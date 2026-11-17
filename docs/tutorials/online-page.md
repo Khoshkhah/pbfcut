@@ -46,5 +46,9 @@ The files are equal to the files of the [command line](../reference/cli.md) with
 - **Get** downloads the file from Geofabrik through a small relay, because Geofabrik does not let other web pages
   read its files. **Download** saves the file on your computer instead: in Chrome and Edge it is as fast as **Get**.
 - The first time that you open the page, it loads two times. This lets the cut use all the cores of the computer.
+- **Compress the files** (on by default) gives normal `.osm.pbf` files. Off, the cut is about 20 % faster and the files
+  are about 1.6 times larger; each OSM program reads them too.
+- The input file can have zlib blocks (as most files) or raw blocks. LZMA, LZ4 and Zstandard blocks stop the cut with
+  an error.
 - **Border (m)** adds the data near each tile or cell to its file. **Threads** sets the number of cores that the cut
   uses.

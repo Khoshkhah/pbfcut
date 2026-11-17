@@ -67,7 +67,7 @@ fn tile_files_equal_the_reference() {
         let dir = std::env::temp_dir().join(format!("pbfcut-golden-{variant}-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let list = tiles(&monaco, z);
-        pbfcut::tilecut::cut_to_tiles(open, &monaco, &list, &dir, &["multipolygon"], border, None).unwrap();
+        pbfcut::tilecut::cut_to_tiles(open, &monaco, &list, &dir, &["multipolygon"], border, None, true).unwrap();
         let got: BTreeMap<String, String> =
             list.iter().filter_map(|t| Some((name(t), hash(&std::fs::read(dir.join(name(t))).ok()?)))).collect();
         std::fs::remove_dir_all(&dir).unwrap();
@@ -81,7 +81,7 @@ fn store_tile_files_equal_the_reference() {
     let open = || std::fs::File::open(&pbf).map(std::io::BufReader::new).map_err(|e| e.to_string());
     let world = Boundary::parse(WORLD).unwrap();
     for (variant, list) in [("store-z14", tiles(&monaco, 14)), ("store-mixed-z14-z15", mixed(&monaco))] {
-        let files = pbfcut::tilecut::cut_to_store(open, &world, &list, &["multipolygon", "boundary"]).unwrap();
+        let files = pbfcut::tilecut::cut_to_store(open, &world, &list, &["multipolygon", "boundary"], false).unwrap();
         let mut got = BTreeMap::new();
         for (i, (t, c)) in files.tiles.iter().enumerate() {
             if c.nodes > 0 {
@@ -93,7 +93,7 @@ fn store_tile_files_equal_the_reference() {
         assert_eq!(got, golden(variant), "{variant}");
         // the sink with no zlib gives the same bytes as the store (also no zlib)
         let mut sunk: Vec<Vec<u8>> = vec![Vec::new(); list.len()];
-        let counts = pbfcut::tilecut::cut_raw_to_sink(open, &world, &list, &["multipolygon", "boundary"], &mut |t, b| {
+        let counts = pbfcut::tilecut::cut_to_sink(open, &world, &list, &["multipolygon", "boundary"], 0.0, false, &mut |t, b| {
             sunk[t as usize].extend_from_slice(b);
             Ok(())
         })
@@ -125,7 +125,7 @@ fn area_list_files_equal_the_reference() {
     let out = std::env::temp_dir().join(format!("pbfcut-golden-areas-{}", std::process::id()));
     std::fs::create_dir_all(&out).unwrap();
     let world = Boundary::parse(WORLD).unwrap();
-    pbfcut::tilecut::cut_to_areas(open, &world, &list, &out, &["multipolygon", "boundary"]).unwrap();
+    pbfcut::tilecut::cut_to_areas(open, &world, &list, &out, &["multipolygon", "boundary"], true).unwrap();
     let got: BTreeMap<String, String> = list
         .areas
         .iter()
@@ -147,9 +147,40 @@ fn areas_that_overlap_give_an_error() {
     let out = std::env::temp_dir().join(format!("pbfcut-golden-overlap-{}", std::process::id()));
     std::fs::create_dir_all(&out).unwrap();
     let world = Boundary::parse(WORLD).unwrap();
-    let e = pbfcut::tilecut::cut_to_areas(open, &world, &list, &out, &["multipolygon", "boundary"]).unwrap_err();
+    let e = pbfcut::tilecut::cut_to_areas(open, &world, &list, &out, &["multipolygon", "boundary"], true).unwrap_err();
     let files = std::fs::read_dir(&out).unwrap().count();
     std::fs::remove_dir_all(&out).unwrap();
     assert!(e.contains("\"west\"") && e.contains("\"harbour\"") && e.contains("overlap"), "{e}");
     assert_eq!(files, 0);
+}
+
+/// Compression off gives raw blocks with the same elements as zlib blocks, and pbfcut reads raw blocks: a copy of the
+/// whole input with raw blocks (the cut to one area that holds the world) cuts to the same tile files, by elements, as
+/// the input with zlib blocks.
+#[test]
+fn compression_off_gives_the_same_elements_and_raw_blocks_can_be_read() {
+    let (pbf, monaco) = data();
+    let tmp = std::env::temp_dir().join(format!("pbfcut-golden-raw-{}", std::process::id()));
+    let (zlib, raw, whole, from_raw) = (tmp.join("zlib"), tmp.join("raw"), tmp.join("whole"), tmp.join("from-raw"));
+    for d in [&zlib, &raw, &whole, &from_raw] {
+        std::fs::create_dir_all(d).unwrap();
+    }
+    let list = tiles(&monaco, 14);
+    let open = || std::fs::File::open(&pbf).map(std::io::BufReader::new).map_err(|e| e.to_string());
+    let cut = |open: &dyn Fn() -> Result<std::io::BufReader<std::fs::File>, String>, dir: &Path, compress: bool| {
+        pbfcut::tilecut::cut_to_tiles(open, &monaco, &list, dir, &["multipolygon", "boundary"], 0.0, None, compress).unwrap()
+    };
+    cut(&open, &zlib, true);
+    cut(&open, &raw, false);
+    let size = |d: &Path| std::fs::read_dir(d).unwrap().map(|e| e.unwrap().metadata().unwrap().len()).sum::<u64>();
+    assert!(size(&raw) * 2 > 3 * size(&zlib), "raw {} bytes, zlib {} bytes", size(&raw), size(&zlib));
+    assert_eq!(pbfcut::job::compare(&zlib, &raw).unwrap().1, Vec::<String>::new(), "compression on and off");
+    // the whole input with raw blocks, and its cut
+    let world = pbfcut::areas::AreaList::parse(r#"{"extracts":[{"output":"all","bbox":[-180,-90,180,90]}]}"#, "name", &|_| Err("".into())).unwrap();
+    pbfcut::tilecut::cut_to_areas(open, &Boundary::parse(WORLD).unwrap(), &world, &whole, &[], false).unwrap();
+    let raw_input = whole.join("all.osm.pbf");
+    let open_raw = || std::fs::File::open(&raw_input).map(std::io::BufReader::new).map_err(|e| e.to_string());
+    cut(&open_raw, &from_raw, true);
+    assert_eq!(pbfcut::job::compare(&zlib, &from_raw).unwrap().1, Vec::<String>::new(), "a raw input");
+    std::fs::remove_dir_all(&tmp).unwrap();
 }
