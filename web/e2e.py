@@ -282,6 +282,19 @@ def main():
             page.set_input_files("#boundary", str(AREA))
             page.click("label[for=kind-a]")
             assert page.is_disabled("#start"), "the areas need their file"
+            # areas with no boundary: the test file has no box in its header, and areas need none
+            page.set_input_files("#boundary", [])
+            page.set_input_files("#areas", str(two))
+            page.click("#start")
+            page.wait_for_selector("#result:not([hidden]), #error:not([hidden])", timeout=120000)
+            assert not page.locator("#error").is_visible(), page.text_content("#error")
+            want_nb = {}
+            with tempfile.TemporaryDirectory() as o:
+                subprocess.run([ROOT / "target/release/pbfcut", "areas", PBF, "--areas", two, "-o", o], check=True, stdout=subprocess.DEVNULL)
+                want_nb = {q.name: q.read_bytes() for q in Path(o).glob("*.osm.pbf")}
+            assert save_all(page) == want_nb, "areas with no boundary"
+            print("desktop, areas with no boundary:", page.text_content("#summary"))
+            page.set_input_files("#boundary", str(AREA))
             for areas_file, want_dir in [(AREA, "a1"), (two, "a2"), (plain, None)]:
                 page.set_input_files("#areas", str(areas_file))
                 n = 2 if areas_file == two else 1

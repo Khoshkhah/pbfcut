@@ -171,8 +171,10 @@ pub fn cut(
     compress: bool,
 ) -> Result<String, JsValue> {
     let open = setup(size, memory_mib);
-    let area = area_of(&open, &boundary)?;
+    // the area of the list of tiles or cells; the areas need none (with no boundary, a file with no box in its header
+    // can be cut to areas, as with the command line)
     let world = Boundary::parse(WORLD)?;
+    let area = if grid == "areas" && boundary.is_none() { Boundary::parse(WORLD)? } else { area_of(&open, &boundary)? };
     let inside = if boundary.is_some() { &area } else { &world };
     let complete: Vec<&str> = complete.split(',').map(str::trim).filter(|t| !t.is_empty()).collect();
     let mut sink = |t: u32, b: &[u8]| tile_write(t, b).map_err(|e| format!("a file in OPFS: {e:?}"));
