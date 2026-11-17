@@ -612,8 +612,10 @@ $("start").addEventListener("click", async () => {
   worker = new Worker("worker.js?v=dev", { type: "module" });
   worker.onmessage = ({ data: m }) => {
     if (m.type === "stage") {
-      $("stage").textContent = m.name;
-      if (m.name === "cut") { lastT = m.t; $("steps").firstElementChild.classList.add("run"); $("stage").textContent = steps[0][1]; }
+      // the box "Step" shows the code of the step only (its name is in the list of steps); before the cut: "start"
+      $("stage").textContent = "start";
+      $("stage").title = m.name;
+      if (m.name === "cut") { lastT = m.t; $("steps").firstElementChild.classList.add("run"); $("stage").textContent = steps[0][0]; $("stage").title = steps[0][1]; }
     } else if (m.type === "memory") {
       shared = m.memory;
       show(m.bytes);
@@ -630,7 +632,8 @@ $("start").addEventListener("click", async () => {
         li.querySelector(".t").textContent = `${((m.t - lastT) / 1000).toFixed(2)} s`;
         lastT = m.t;
         const next = steps[[...$("steps").children].indexOf(li) + 1];
-        $("stage").textContent = next ? next[1] : "the end";
+        $("stage").textContent = next ? next[0] : "the end";
+        $("stage").title = next ? next[1] : "";
       }
     } else if (m.type === "done") {
       for (const x of $("steps").children) x.classList.remove("run");
