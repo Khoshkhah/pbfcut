@@ -568,9 +568,10 @@ $("start").addEventListener("click", async () => {
   $("error").hidden = true;
   await cleaned;
   const boundary = (await boundaryOf())?.text ?? null;      // the boundary file, else the outline of the region
+  cutDir = `cut-${Date.now()}`;      // the folder of this cut in the storage of the site
   const steps = STEPS[kind()];
   const msg = {
-    kind: kind(), areas: kind() === "areas" ? await areasText($("areas").files[0]) : null,
+    dir: cutDir, kind: kind(), areas: kind() === "areas" ? await areasText($("areas").files[0]) : null,
     level: Number($(kind() === "h3" ? "res" : "zoom").value), border: Number($("border").value) || 0, threads: Number($("threads").value) || 1,
     boundary, complete: "multipolygon,boundary", compress: $("compress").checked,
     ...(source() === "file" ? { file: $("file").files[0] } : { region: fileName(region.id) }),
@@ -588,11 +589,14 @@ $("start").addEventListener("click", async () => {
   }));
   const t0 = performance.now();
   let shared = null, lastT = null, panic = null;
+  let stepStart = performance.now();     // the running step: its time counts up in the list (a long step is not frozen)
   let top = 0;     // the most WebAssembly memory of this cut
   const show = (bytes) => { top = Math.max(top, bytes); $("memory").textContent = mib(bytes); };
   timer = setInterval(() => {
     $("time").textContent = `${((performance.now() - t0) / 1000).toFixed(1)} s`;
     if (shared) show(shared.buffer.byteLength);
+    const run = $("steps").querySelector("li.run .t");
+    if (run) run.textContent = `${((performance.now() - stepStart) / 1000).toFixed(0)} s`;
   }, 200);
   const used = async () => {
     const e = await navigator.storage.estimate();
@@ -615,7 +619,7 @@ $("start").addEventListener("click", async () => {
       // the box "Step" shows the code of the step only (its name is in the list of steps); before the cut: "start"
       $("stage").textContent = "start";
       $("stage").title = m.name;
-      if (m.name === "cut") { lastT = m.t; $("steps").firstElementChild.classList.add("run"); $("stage").textContent = steps[0][0]; $("stage").title = steps[0][1]; }
+      if (m.name === "cut") { lastT = m.t; stepStart = performance.now(); $("steps").firstElementChild.classList.add("run"); $("stage").textContent = steps[0][0]; $("stage").title = steps[0][1]; }
     } else if (m.type === "memory") {
       shared = m.memory;
       show(m.bytes);
@@ -631,6 +635,7 @@ $("start").addEventListener("click", async () => {
         li.title = text;
         li.querySelector(".t").textContent = `${((m.t - lastT) / 1000).toFixed(2)} s`;
         lastT = m.t;
+        stepStart = performance.now();
         const next = steps[[...$("steps").children].indexOf(li) + 1];
         $("stage").textContent = next ? next[0] : "the end";
         $("stage").title = next ? next[1] : "";
@@ -655,17 +660,26 @@ $("start").addEventListener("click", async () => {
   worker.postMessage(msg);
   $("start").disabled = true;
   $("stop").disabled = false;
-  $("stop").onclick = () => {
+  $("stop").onclick = async () => {
     end();
     $("stage").textContent = "stopped";
+    // the files of the stopped cut go at once (the temporary files and the part of the result): the worker closes its
+    // files when it stops, so the removal tries again for some seconds
+    const root = await navigator.storage.getDirectory(), stopped = cutDir;     // a new cut has a new folder
+    for (let i = 0; i < 40; i++) {
+      try { await root.removeEntry(stopped, { recursive: true }); break; }
+      catch (e) { if (e.name === "NotFoundError") break; await new Promise((ok) => setTimeout(ok, 250)); }
+    }
+    used();
   };
 });
 
 // ---- 4. the result: one OPFS file with all tile files; `files` of the report, with `parts` (tile number -> [[start, length]])
 let saved = null;
+let cutDir = "";      // the folder of the last cut in the storage of the site (worker.js)
 async function result({ report, parts, bytes }) {
   const where = new Map(parts);
-  const all = await (await (await (await navigator.storage.getDirectory()).getDirectoryHandle("cut")).getFileHandle("tiles")).getFile();
+  const all = await (await (await (await navigator.storage.getDirectory()).getDirectoryHandle(cutDir)).getFileHandle("tiles")).getFile();
   const files = report.files.map((f) => ({ ...f, parts: where.get(f.index) ?? [] }));
   files.forEach((f) => { f.size = f.parts.reduce((s, p) => s + p[1], 0); });
   saved = { all, files };
