@@ -278,6 +278,47 @@ mod tests {
         assert!(got.iter().filter(|g| !g.is_empty()).count() > 4);
     }
 
+    /// The cut of the build by tiles into a sink gives the tile files and the junctions files of the cut into a folder.
+    #[test]
+    fn the_build_cut_into_a_sink_equals_the_cut_into_a_folder() {
+        struct Shared;
+        impl NodeUses for Shared {
+            fn of_way(&self, _: &[(String, String)], refs: &[i64], out: &mut Vec<(i64, u8)>) {
+                out.extend(refs.iter().map(|&n| (n, 1)));
+            }
+            fn of_node(&self, uses: &mut dyn Iterator<Item = u8>) -> u8 {
+                u8::from(uses.count() >= 2)
+            }
+        }
+        let data = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/data");
+        let pbf = data.join("monaco.osm.pbf");
+        let b = Boundary::parse(&std::fs::read_to_string(data.join("monaco.geojson")).unwrap()).unwrap();
+        let tiles = crate::tiles::tiles(&b, 15);
+        let open = || std::fs::File::open(&pbf).map_err(|e| e.to_string());
+        let dir = std::env::temp_dir().join(format!("pbfcut-sink-build-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        cut_to_tiles(open, &b, &tiles, &dir, &["multipolygon"], 25.0, Some(&Shared), true).unwrap();
+        let mut got = vec![Vec::new(); tiles.len()];
+        let (_, junctions) = cut_to_sink_build(open, &b, &tiles, &["multipolygon"], 25.0, &Shared, true, &mut |t, bytes| {
+            got[t as usize].extend_from_slice(bytes);
+            Ok(())
+        })
+        .unwrap();
+        let mut with_rows = 0;
+        for (i, (t, got)) in tiles.iter().zip(&got).enumerate() {
+            let name = format!("{}_{}_{}", t.z, t.x, t.y);
+            let want = std::fs::read(dir.join(format!("{name}.osm.pbf"))).unwrap_or_default();
+            assert!(*got == want, "tile {t:?}: {} bytes in the sink, {} in the folder", got.len(), want.len());
+            if let Ok(want) = std::fs::read(dir.join(format!("{name}.junctions"))) {
+                let j = junctions.file(i).unwrap();
+                assert_eq!(j, want, "the junctions of tile {t:?}");
+                with_rows += usize::from(!parse_junctions(&j).unwrap().is_empty());
+            }
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert!(with_rows > 2, "{with_rows} junctions files with rows");
+    }
+
     /// A point on the edge between two areas goes to the first one, with no error; a point inside two areas is an overlap.
     #[test]
     fn a_shared_edge_is_not_an_overlap() {
@@ -1244,8 +1285,13 @@ fn write_junctions(parts: &Parts, tile: u32, out: &Path) -> Result<(), String> {
 /// Read a junctions file of the tile cut: (node id, flags).
 pub fn read_junctions(path: &Path) -> Result<Vec<(i64, u8)>, String> {
     let b = std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?;
+    parse_junctions(&b).map_err(|e| format!("{}: {e}", path.display()))
+}
+
+/// The rows of the bytes of a junctions file of the tile cut: (node id, flags).
+pub fn parse_junctions(b: &[u8]) -> Result<Vec<(i64, u8)>, String> {
     if b.len() < 8 || &b[..8] != JUNCTIONS_MAGIC || (b.len() - 8) % 9 != 0 {
-        return Err(format!("{}: not a junctions file of this version of the tile cut", path.display()));
+        return Err("not a junctions file of this version of the tile cut".into());
     }
     Ok(b[8..].chunks(9).map(|r| (i64::from_le_bytes(r[..8].try_into().unwrap()), r[8])).collect())
 }
@@ -1468,6 +1514,57 @@ pub fn cut_to_sink<R: Read + Seek + Send>(
     sink: Sink,
 ) -> Result<Vec<CutCounts>, String> {
     cut_into_sink(open, boundary, &Grid::tiles(tiles), complete, border_m, compress, sink)
+}
+
+/// The junctions files of [`cut_to_sink_build`], in the temporary store.
+pub struct Junctions(Parts);
+
+impl Junctions {
+    /// The bytes of the junctions file of tile `i` (the file that [`cut_to_tiles`] writes as `z_x_y.junctions`).
+    pub fn file(&self, i: usize) -> Result<Vec<u8>, String> {
+        let mut b = JUNCTIONS_MAGIC.to_vec();
+        if let Some(mut r) = self.0.reader(i as u32, "junctions") {
+            r.read_to_end(&mut b).map_err(|e| format!("a temporary file of the tile cut: {e}"))?;
+        }
+        Ok(b)
+    }
+}
+
+impl Drop for Junctions {
+    /// The folder of the parts goes (natively; the chunks of the store go with their temporary file).
+    fn drop(&mut self) {
+        if let Files::Dir(d) = &self.0.files {
+            let _ = std::fs::remove_dir_all(d);
+        }
+    }
+}
+
+/// The cut of the build by tiles ([`cut_to_tiles`] with `node_uses`), with each tile file given to `sink` (in pieces, tile
+/// by tile) and the junctions files in [`Junctions`]: the build by tiles where no folder is (the browser). The tile files
+/// and the junctions files are equal to the files of [`cut_to_tiles`].
+#[allow(clippy::too_many_arguments)]
+pub fn cut_to_sink_build<R: Read + Seek + Send>(
+    open: impl Fn() -> Result<R, String>,
+    boundary: &Boundary,
+    tiles: &[Tile],
+    complete: &[&str],
+    border_m: f64,
+    node_uses: &dyn NodeUses,
+    compress: bool,
+    mut sink: Sink,
+) -> Result<(Vec<CutCounts>, Junctions), String> {
+    #[cfg(target_arch = "wasm32")]
+    let files = Files::Store(Chunks::new(&*crate::store::temp_store()).map_err(|e| format!("a temporary file of the tile cut: {e}"))?);
+    #[cfg(not(target_arch = "wasm32"))]
+    let files = {
+        static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let tmp = crate::store::temp_dir().join(format!("pbfcut-sink-build-{}-{n}", std::process::id()));
+        std::fs::create_dir_all(&tmp).map_err(|e| format!("{}: {e}", tmp.display()))?;
+        Files::Dir(tmp)
+    };
+    let (counts, parts) = cut(open, boundary, &Grid::tiles(tiles), complete, border_m, files, None, Some(&mut sink), !compress, Some(node_uses))?;
+    Ok((counts, Junctions(parts)))
 }
 
 /// [`cut_to_cells`], with each cell file given to `sink` (in pieces, cell by cell), as [`cut_to_sink`] does for the
