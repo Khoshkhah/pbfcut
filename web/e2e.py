@@ -54,6 +54,18 @@ def check_plan(page, count, word):
     return page.text_content("#plan-text")
 
 
+def zip_all(page, zip64=False):
+    """ "Download all as .zip": gives {name: bytes} of the zip (Python's zipfile checks the CRC-32 of each file)."""
+    import io
+    import zipfile
+    page.evaluate(f"self.zip64ForTest = {'true' if zip64 else 'false'}")
+    with page.expect_download(timeout=120000) as d:
+        page.click("#zip")
+    z = zipfile.ZipFile(io.BytesIO(Path(d.value.path()).read_bytes()))
+    assert z.testzip() is None and all(i.compress_type == zipfile.ZIP_STORED for i in z.infolist())
+    return {i.filename: z.read(i) for i in z.infolist()}
+
+
 def save_all(page):
     """ "Save all to a folder", with the folder picker of the page given an OPFS folder; gives {name: bytes}."""
     page.evaluate("""self.showDirectoryPicker = async () => {
@@ -224,6 +236,9 @@ def main():
             for name in want:
                 assert got[name] == want[name], f"{name}: the page and the command line differ"
             print(f"desktop: {len(got)} files equal the files of the command line")
+            # the .zip, and the .zip with ZIP64 (as for more than 4 GiB): the same files
+            assert zip_all(page) == want and zip_all(page, zip64=True) == want
+            print(f"desktop: the .zip and the ZIP64 .zip hold the {len(want)} files")
             # a refresh removes all files of the site (the tile files, the temporary files, the saved folder)
             page.reload()
             page.wait_for_function("self.crossOriginIsolated === true")
@@ -317,11 +332,16 @@ def main():
             phone.click("label[for=src-f]")
             phone.set_input_files("#file", str(PBF))
             phone.set_input_files("#boundary", str(AREA))     # this test file has no bounding box in its header
+            # a browser with no folder picker (Firefox, Safari): only the .zip
+            phone.evaluate("delete self.showDirectoryPicker; delete Window.prototype.showDirectoryPicker")
             phone.select_option("#zoom", "14")
             check_plan(phone, cli_count("tiles", PBF, "--zoom", "14", "--boundary", AREA), "tile")
             if shots:
                 phone.screenshot(path=shots / "phone-map.png", full_page=True)
             print("phone, one thread:", cut(phone, threads=1))
+            assert phone.is_hidden("#save") and phone.is_visible("#zip")
+            assert len(zip_all(phone)) == phone.locator("#files tr").count()
+            print("phone: no folder picker, the .zip holds all files")
             with phone.expect_download() as d:
                 phone.click("#files tr:first-child a")
             name = d.value.suggested_filename

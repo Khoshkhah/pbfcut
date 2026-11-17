@@ -3,7 +3,7 @@
 The [online page](https://khoshkhah.github.io/pbfcut/) cuts a `.osm.pbf` file in your browser. You do not install
 anything, and the file does not leave your computer.
 
-Use Chrome or Edge on a computer. Only these browsers can save all files into a folder.
+It works in each browser, also on a phone. Chrome and Edge on a computer can also save all files into a folder.
 
 ## Procedure
 
@@ -28,7 +28,8 @@ Use Chrome or Edge on a computer. Only these browsers can save all files into a 
 6. Look at the map. It shows the tiles, cells or areas of the cut and the boundary, with their number. If the
    boundary or the areas file has an error, the page shows it here.
 7. Click **Cut**. The page shows each step and its time.
-8. Click **Save all to a folder**, and select a folder.
+8. Click **Download all as .zip** (each browser), or **Save all to a folder** and select a folder (Chrome and Edge).
+   The `.zip` holds the files as they are, with no more compression. It takes no more storage in the browser.
 
 The files are equal to the files of the [command line](../reference/cli.md) with the same settings.
 
