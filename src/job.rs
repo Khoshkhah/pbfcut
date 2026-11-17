@@ -48,8 +48,9 @@ pub struct Report {
 
 /// Cut `input` to `grid` in the folder `out` (the cut makes the folder). `boundary`: the area of the cut; with no
 /// boundary, the zoom and the resolution take the bounding box in the header of the file. `complete`: the relation
-/// types that the cut keeps whole. `border_m`: the border in metres (tiles and cells only).
-pub fn cut(input: &Path, out: &Path, grid: &Grid, boundary: Option<Boundary>, complete: &[&str], border_m: f64) -> Result<Report, String> {
+/// types that the cut keeps whole. `border_m`: the border in metres (tiles and cells only). `compress`: zlib blocks
+/// (the default of the command line); false: raw blocks, a faster cut and larger files with the same elements.
+pub fn cut(input: &Path, out: &Path, grid: &Grid, boundary: Option<Boundary>, complete: &[&str], border_m: f64, compress: bool) -> Result<Report, String> {
     let name = input.display();
     if border_m.is_nan() || border_m < 0.0 {
         return Err("border: a distance in metres".into());
@@ -73,13 +74,13 @@ pub fn cut(input: &Path, out: &Path, grid: &Grid, boundary: Option<Boundary>, co
     // (the name of each tile, cell or area, its file), and the numbers of elements of each
     let (key, names, counts): (_, Vec<(String, String)>, _) = match grid {
         Grid::Areas(list) => {
-            let counts = cut_to_areas(open, &boundary, list, out, complete)?;
+            let counts = cut_to_areas(open, &boundary, list, out, complete, compress)?;
             ("area", list.areas.iter().map(|a| (a.name.clone(), format!("{}.osm.pbf", a.name))).collect(), counts)
         }
         Grid::Res(r) => {
             let res = Resolution::try_from(*r).map_err(|_| "res: a number from 0 to 15")?;
             let list = cells(header_box()?.as_ref().unwrap_or(&boundary), res);
-            let counts = cut_to_cells(open, &boundary, &list, out, complete, border_m)?;
+            let counts = cut_to_cells(open, &boundary, &list, out, complete, border_m, compress)?;
             ("cell", list.iter().map(|c| (c.to_string(), format!("{c}.osm.pbf"))).collect(), counts)
         }
         Grid::Zoom(_) | Grid::Tiles(_) => {
@@ -89,7 +90,7 @@ pub fn cut(input: &Path, out: &Path, grid: &Grid, boundary: Option<Boundary>, co
                 Grid::Tiles(l) => l.clone(),
                 _ => unreachable!(),
             };
-            let counts = cut_to_tiles(open, &boundary, &list, out, complete, border_m, None)?;
+            let counts = cut_to_tiles(open, &boundary, &list, out, complete, border_m, None, compress)?;
             ("tile", list.iter().map(|t| (t.name(), format!("{}_{}_{}.osm.pbf", t.z, t.x, t.y))).collect(), counts)
         }
     };

@@ -85,7 +85,7 @@ const HELP = {
     ["Geofabrik region", "Geofabrik (download.geofabrik.de) is a website that gives free OpenStreetMap files of the countries and regions of the world. Search a region, then click Get or Download."],
     ["Get", "Puts the file into the storage of this site, through a relay (Geofabrik does not let web pages read its files)."],
     ["Download", "Saves the file on your computer, at the place that you choose, as fast as Get (Chrome and Edge). Other browsers download it directly from Geofabrik, which is slower. Then select it as a local file."],
-    ["Local file", "A .osm.pbf file on this computer. The page does not upload it."],
+    ["Local file", "A .osm.pbf file on this computer. The page does not upload it. Its blocks can be zlib blocks (as most files) or raw blocks; LZMA, LZ4 and Zstandard blocks stop the cut with an error."],
   ]],
   settings: ["Settings", [
     ["Tiles", "The square tiles of web maps. One file for each tile: z_x_y.osm.pbf."],
@@ -95,6 +95,7 @@ const HELP = {
     ["Resolution", "The mean area of an H3 cell."],
     ["Border", "Each file also gets the data this many metres around its tile or cell."],
     ["Threads", "The number of threads of the cut. Default: the number of cores."],
+    ["Compress the files", "On (default): normal .osm.pbf files with zlib blocks, best to keep or to save. Off: raw blocks; the cut is about 20 % faster and the files are about 1.6 times larger (Sweden, zoom 8: 16.9 s and 1.5 GiB, against 20.8 s and 0.9 GiB). Each OSM program reads both."],
     ["Boundary", "Optional: a GeoJSON, .poly (osmosis) or WKT file; the cut keeps only the data inside it. Without it, a Geofabrik region (also a local file with the name of a Geofabrik file) uses the outline of the region; another file uses its bounding box."],
     ["GeoJSON", "In longitude and latitude (WGS 84): a Polygon, a MultiPolygon, a Feature or a FeatureCollection."],
   ]],
@@ -571,7 +572,7 @@ $("start").addEventListener("click", async () => {
   const msg = {
     kind: kind(), areas: kind() === "areas" ? await areasText($("areas").files[0]) : null,
     level: Number($(kind() === "h3" ? "res" : "zoom").value), border: Number($("border").value) || 0, threads: Number($("threads").value) || 1,
-    boundary, complete: "multipolygon,boundary",
+    boundary, complete: "multipolygon,boundary", compress: $("compress").checked,
     ...(source() === "file" ? { file: $("file").files[0] } : { region: fileName(region.id) }),
   };
   $("progress").hidden = false;

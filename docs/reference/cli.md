@@ -7,7 +7,9 @@ pbfcut areas   IN.osm.pbf --areas FILE [--name PROPERTY] [OPTIONS] [-o DIR]
 pbfcut compare DIR_A DIR_B
 ```
 
-The input must be sorted by type, then by id, as the files of Geofabrik are. If an error occurs, pbfcut writes it to
+The input must be sorted by type, then by id, as the files of Geofabrik are. Its blocks can be zlib blocks (as most
+`.osm.pbf` files) or raw blocks, also both in one file. A block with LZMA, LZ4 or Zstandard compression stops the cut
+with an error. If an error occurs, pbfcut writes it to
 standard error and stops with exit code 1.
 
 ## pbfcut tiles
@@ -51,6 +53,7 @@ These options are the same for `tiles`, `h3` and `areas`.
 | `--bbox W,S,E,N` | A box as the boundary, in degrees. Not together with `--boundary`. |
 | `--border METRES` | Also give each tile or cell the ways less than this distance from it. Default: 0. Not for `areas`. For `h3`, less than half the edge of a cell. |
 | `--complete TYPES` | The relation types that each file gets with all their members. Default: `multipolygon,boundary`. `""`: none. |
+| `--no-compression` | Write raw blocks, not zlib blocks. The cut is about 25 % faster, and the files are about 1.6 times larger (Sweden, zoom 8: 9.5 s and 1,619 MB, against 12.7 s and 1,000 MB). The elements are the same. |
 | `--memory SIZE` | The memory budget, for example `4G` or `512M`. Default: `2G`. A smaller budget uses more disk and more time, and gives the same files. |
 | `--temp DIR` | The folder of the temporary files. Default: the temporary folder of the system. |
 | `--steps` | Write the time and the memory of each step to standard error. This makes the cut slower. |
@@ -58,7 +61,8 @@ These options are the same for `tiles`, `h3` and `areas`.
 ## The output
 
 - One `.osm.pbf` file for each tile, cell or area with data. The others have no file.
-- Each file is sorted by type, then by id, with zlib blocks and no metadata (version, time, user).
+- Each file is sorted by type, then by id, with no metadata (version, time, user). Its blocks are zlib blocks, or raw
+  blocks with `--no-compression`. Each OSM program reads both.
 - Standard output gets JSON: the number of tiles, cells or areas, and for each file its name and its numbers of
   nodes, ways and relations. With `--steps`, also `peak_heap_mib`.
 

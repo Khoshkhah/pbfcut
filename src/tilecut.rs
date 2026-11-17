@@ -238,8 +238,8 @@ mod tests {
         let open = || std::fs::File::open(&pbf).map_err(|e| e.to_string());
         let dir = std::env::temp_dir().join(format!("pbfcut-test-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        cut_to_tiles(open, &b, &tiles, &dir, &["multipolygon"], 25.0, None).unwrap();
-        let store = cut_to_store_build(open, &b, &tiles, true, 25.0, None).unwrap();
+        cut_to_tiles(open, &b, &tiles, &dir, &["multipolygon"], 25.0, None, true).unwrap();
+        let store = cut_to_store_build(open, &b, &tiles, true, 25.0, None, true).unwrap();
         let mut n = 0;
         for (i, (t, _)) in store.tiles.iter().enumerate() {
             let mut got = Vec::new();
@@ -263,9 +263,9 @@ mod tests {
         let complete = ["multipolygon", "boundary"];
         let dir = std::env::temp_dir().join(format!("pbfcut-sink-test-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        cut_to_tiles(open, &b, &tiles, &dir, &complete, 25.0, None).unwrap();
+        cut_to_tiles(open, &b, &tiles, &dir, &complete, 25.0, None, true).unwrap();
         let mut got = vec![Vec::new(); tiles.len()];
-        cut_to_sink(open, &b, &tiles, &complete, 25.0, &mut |t, bytes| {
+        cut_to_sink(open, &b, &tiles, &complete, 25.0, true, &mut |t, bytes| {
             got[t as usize].extend_from_slice(bytes);
             Ok(())
         })
@@ -307,9 +307,9 @@ mod tests {
         let complete = ["multipolygon", "boundary"];
         let dir = std::env::temp_dir().join(format!("pbfcut-areas-sink-test-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        cut_to_areas(open, &world, &list, &dir, &complete).unwrap();
+        cut_to_areas(open, &world, &list, &dir, &complete, true).unwrap();
         let mut got = vec![Vec::new(); list.areas.len()];
-        cut_areas_to_sink(open, &world, &list, &complete, &mut |a, bytes| {
+        cut_areas_to_sink(open, &world, &list, &complete, true, &mut |a, bytes| {
             got[a as usize].extend_from_slice(bytes);
             Ok(())
         })
@@ -331,9 +331,9 @@ mod tests {
         let complete = ["multipolygon", "boundary"];
         let dir = std::env::temp_dir().join(format!("pbfcut-cell-sink-test-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        cut_to_cells(open, &b, &cells, &dir, &complete, 25.0).unwrap();
+        cut_to_cells(open, &b, &cells, &dir, &complete, 25.0, true).unwrap();
         let mut got = vec![Vec::new(); cells.len()];
-        cut_cells_to_sink(open, &b, &cells, &complete, 25.0, &mut |t, bytes| {
+        cut_cells_to_sink(open, &b, &cells, &complete, 25.0, true, &mut |t, bytes| {
             got[t as usize].extend_from_slice(bytes);
             Ok(())
         })
@@ -367,7 +367,7 @@ mod tests {
         let open = || std::fs::File::open(&pbf).map_err(|e| e.to_string());
         let dir = std::env::temp_dir().join(format!("pbfcut-junctions-test-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        cut_to_tiles(open, &b, &tiles, &dir, &[], 0.0, Some(&Shared)).unwrap();
+        cut_to_tiles(open, &b, &tiles, &dir, &[], 0.0, Some(&Shared), true).unwrap();
         let (mut files, mut rows, mut junctions) = (0, 0, 0);
         for t in &tiles {
             if !dir.join(format!("{}_{}_{}.osm.pbf", t.z, t.x, t.y)).exists() {
@@ -1281,7 +1281,8 @@ pub fn node_positions<R: Read + Send>(r: R, ids: &crate::util::FxHashSet<i64>) -
 /// elements of each tile. `complete`: the types of the relations to complete in each tile with all their members
 /// (osmium's smart cut: `multipolygon`). A program that reads no multipolygons gives none: then the cut of France reads 60
 /// of 80 million extra nodes less. `node_uses`: write the junctions file of each tile next to it
-/// (`z_x_y.junctions`).
+/// (`z_x_y.junctions`). `compress`: zlib blocks, as most `.osm.pbf` files (about 2 times smaller); false: raw blocks (a
+/// faster cut, larger files that each OSM program reads too). The elements are the same.
 pub fn cut_to_tiles<R: Read + Seek + Send>(
     open: impl Fn() -> Result<R, String>,
     boundary: &Boundary,
@@ -1290,8 +1291,9 @@ pub fn cut_to_tiles<R: Read + Seek + Send>(
     complete: &[&str],
     border_m: f64,
     node_uses: Option<&dyn NodeUses>,
+    compress: bool,
 ) -> Result<Vec<CutCounts>, String> {
-    cut_to_dir(open, boundary, &Grid::tiles(tiles), dir, complete, border_m, node_uses)
+    cut_to_dir(open, boundary, &Grid::tiles(tiles), dir, complete, border_m, node_uses, compress)
 }
 
 /// [`cut_to_tiles`] for H3 cells of one resolution ([`crate::cells::cells`]): the file of a cell goes into `dir` as
@@ -1304,8 +1306,9 @@ pub fn cut_to_cells<R: Read + Seek + Send>(
     dir: &Path,
     complete: &[&str],
     border_m: f64,
+    compress: bool,
 ) -> Result<Vec<CutCounts>, String> {
-    cut_to_dir(open, boundary, &cell_grid(cells, border_m)?, dir, complete, border_m, None)
+    cut_to_dir(open, boundary, &cell_grid(cells, border_m)?, dir, complete, border_m, None, compress)
 }
 
 /// Cut the region file to each area of `areas` inside `boundary`, as [`cut_to_tiles`] does to tiles: the file of an area
@@ -1318,8 +1321,9 @@ pub fn cut_to_areas<R: Read + Seek + Send>(
     areas: &AreaList,
     dir: &Path,
     complete: &[&str],
+    compress: bool,
 ) -> Result<Vec<CutCounts>, String> {
-    cut_to_dir(open, boundary, &Grid::areas(areas), dir, complete, 0.0, None)
+    cut_to_dir(open, boundary, &Grid::areas(areas), dir, complete, 0.0, None, compress)
 }
 
 /// [`cut_to_areas`], with each area file given to `sink` (in pieces, area by area; the number of an area is its place
@@ -1329,9 +1333,10 @@ pub fn cut_areas_to_sink<R: Read + Seek + Send>(
     boundary: &Boundary,
     areas: &AreaList,
     complete: &[&str],
+    compress: bool,
     sink: Sink,
 ) -> Result<Vec<CutCounts>, String> {
-    cut_into_sink(open, boundary, &Grid::areas(areas), complete, 0.0, false, sink)
+    cut_into_sink(open, boundary, &Grid::areas(areas), complete, 0.0, compress, sink)
 }
 
 /// The grid of the cells, with an error for cells of two resolutions or a border of half the edge of a cell or more.
@@ -1354,13 +1359,14 @@ fn cut_to_dir<R: Read + Seek + Send>(
     complete: &[&str],
     border_m: f64,
     node_uses: Option<&dyn NodeUses>,
+    compress: bool,
 ) -> Result<Vec<CutCounts>, String> {
     // a number for each cut: two cuts at a time in one process (the tests) must not share the folder
     static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let tmp = crate::store::temp_dir().join(format!("pbfcut-tiles-{}-{n}", std::process::id()));
     std::fs::create_dir_all(&tmp).map_err(|e| format!("{}: {e}", tmp.display()))?;
-    let cut = cut(open, boundary, grid, complete, border_m, Files::Dir(tmp.clone()), Some(dir), None, false, node_uses);
+    let cut = cut(open, boundary, grid, complete, border_m, Files::Dir(tmp.clone()), Some(dir), None, !compress, node_uses);
     let _ = std::fs::remove_dir_all(&tmp);
     Ok(cut?.0)
 }
@@ -1399,7 +1405,7 @@ impl Drop for TileFiles {
 }
 
 /// [`cut_to_tiles`] into the temporary store (`spill::temp_store`: a folder natively, OPFS in the browser), with no
-/// junctions files and with no zlib in the tile files: for a program that reads each tile file one time, soon after the
+/// junctions files. With `compress` false (no zlib), for a program that reads each tile file one time, soon after the
 /// cut. `complete`: the types of the relations to complete with all their members (for example `multipolygon` and
 /// `boundary`), each one in each tile with a member, so each tile file is complete (as the cut of the build by tiles and
 /// osmium's smart cut).
@@ -1408,6 +1414,7 @@ pub fn cut_to_store<R: Read + Seek + Send>(
     boundary: &Boundary,
     tiles: &[Tile],
     complete: &[&str],
+    compress: bool,
 ) -> Result<TileFiles, String> {
     // natively, a file for each part and each tile in a temporary folder, so the tiles are written at the same time with
     // no lock (France: one file for all took 31 s for step 5); in the browser, chunks of one file of the store (OPFS)
@@ -1421,7 +1428,7 @@ pub fn cut_to_store<R: Read + Seek + Send>(
     };
     #[cfg(target_arch = "wasm32")]
     let files = Files::Store(Chunks::new(&*crate::store::temp_store()).map_err(|e| format!("a temporary file of the tile cut: {e}"))?);
-    let (counts, parts) = cut(open, boundary, &Grid::tiles(tiles), complete, 0.0, files, None, None, true, None)?;
+    let (counts, parts) = cut(open, boundary, &Grid::tiles(tiles), complete, 0.0, files, None, None, !compress, None)?;
     Ok(TileFiles { parts, tiles: tiles.iter().copied().zip(counts).collect() })
 }
 
@@ -1435,10 +1442,11 @@ pub fn cut_to_store_build<R: Read + Seek + Send>(
     multipolygons: bool,
     border_m: f64,
     node_uses: Option<&dyn NodeUses>,
+    compress: bool,
 ) -> Result<TileFiles, String> {
     let chunks = Chunks::new(&*crate::store::temp_store()).map_err(|e| format!("a temporary file of the tile cut: {e}"))?;
     let complete: &[&str] = if multipolygons { &["multipolygon"] } else { &[] };
-    let (counts, parts) = cut(open, boundary, &Grid::tiles(tiles), complete, border_m, Files::Store(chunks), None, None, false, node_uses)?;
+    let (counts, parts) = cut(open, boundary, &Grid::tiles(tiles), complete, border_m, Files::Store(chunks), None, None, !compress, node_uses)?;
     Ok(TileFiles { parts, tiles: tiles.iter().copied().zip(counts).collect() })
 }
 
@@ -1452,22 +1460,10 @@ pub fn cut_to_sink<R: Read + Seek + Send>(
     tiles: &[Tile],
     complete: &[&str],
     border_m: f64,
+    compress: bool,
     sink: Sink,
 ) -> Result<Vec<CutCounts>, String> {
-    cut_into_sink(open, boundary, &Grid::tiles(tiles), complete, border_m, false, sink)
-}
-
-/// [`cut_to_sink`] with no zlib in the tile files (the blobs hold the blocks as they are): for a program that reads each
-/// tile file one time, soon after the cut, as [`cut_to_store`]. The elements equal the files of [`cut_to_sink`]; the
-/// bytes do not. Less CPU for the cut, more bytes in the store.
-pub fn cut_raw_to_sink<R: Read + Seek + Send>(
-    open: impl Fn() -> Result<R, String>,
-    boundary: &Boundary,
-    tiles: &[Tile],
-    complete: &[&str],
-    sink: Sink,
-) -> Result<Vec<CutCounts>, String> {
-    cut_into_sink(open, boundary, &Grid::tiles(tiles), complete, 0.0, true, sink)
+    cut_into_sink(open, boundary, &Grid::tiles(tiles), complete, border_m, compress, sink)
 }
 
 /// [`cut_to_cells`], with each cell file given to `sink` (in pieces, cell by cell), as [`cut_to_sink`] does for the
@@ -1478,9 +1474,10 @@ pub fn cut_cells_to_sink<R: Read + Seek + Send>(
     cells: &[CellIndex],
     complete: &[&str],
     border_m: f64,
+    compress: bool,
     sink: Sink,
 ) -> Result<Vec<CutCounts>, String> {
-    cut_into_sink(open, boundary, &cell_grid(cells, border_m)?, complete, border_m, false, sink)
+    cut_into_sink(open, boundary, &cell_grid(cells, border_m)?, complete, border_m, compress, sink)
 }
 
 /// The cut into a sink (the tiles or the cells), with the temporary files in a folder natively, in the store of the
@@ -1491,14 +1488,13 @@ fn cut_into_sink<R: Read + Seek + Send>(
     grid: &Grid,
     complete: &[&str],
     border_m: f64,
-    // the tile files with no zlib ([`cut_raw_to_sink`])
-    raw: bool,
+    compress: bool,
     mut sink: Sink,
 ) -> Result<Vec<CutCounts>, String> {
     #[cfg(target_arch = "wasm32")]
     {
         let files = Files::Store(Chunks::new(&*crate::store::temp_store()).map_err(|e| format!("a temporary file of the tile cut: {e}"))?);
-        Ok(cut(open, boundary, grid, complete, border_m, files, None, Some(&mut sink), raw, None)?.0)
+        Ok(cut(open, boundary, grid, complete, border_m, files, None, Some(&mut sink), !compress, None)?.0)
     }
     #[cfg(not(target_arch = "wasm32"))]
     {
@@ -1506,7 +1502,7 @@ fn cut_into_sink<R: Read + Seek + Send>(
         let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let tmp = crate::store::temp_dir().join(format!("pbfcut-sink-{}-{n}", std::process::id()));
         std::fs::create_dir_all(&tmp).map_err(|e| format!("{}: {e}", tmp.display()))?;
-        let cut = cut(open, boundary, grid, complete, border_m, Files::Dir(tmp.clone()), None, Some(&mut sink), raw, None);
+        let cut = cut(open, boundary, grid, complete, border_m, Files::Dir(tmp.clone()), None, Some(&mut sink), !compress, None);
         let _ = std::fs::remove_dir_all(&tmp);
         Ok(cut?.0)
     }

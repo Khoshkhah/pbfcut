@@ -239,6 +239,15 @@ def main():
             # the .zip, and the .zip with ZIP64 (as for more than 4 GiB): the same files
             assert zip_all(page) == want and zip_all(page, zip64=True) == want
             print(f"desktop: the .zip and the ZIP64 .zip hold the {len(want)} files")
+            # compression off: raw blocks, byte-equal to --no-compression, and larger
+            page.uncheck("#compress")
+            print("desktop, compression off:", cut(page, threads=4))
+            raw = save_all(page)
+            want_raw = cli_files(Path(tmp) / "raw", "tiles", PBF, "--zoom", "14", "--no-compression")
+            assert raw == want_raw, f"compression off: page {sorted(raw)}, command line {sorted(want_raw)}"
+            assert sum(map(len, raw.values())) > sum(map(len, got.values())), "raw files are not larger"
+            page.check("#compress")
+            print(f"desktop, compression off: {len(raw)} files equal --no-compression")
             # a refresh removes all files of the site (the tile files, the temporary files, the saved folder)
             page.reload()
             page.wait_for_function("self.crossOriginIsolated === true")
