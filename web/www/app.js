@@ -103,6 +103,7 @@ const HELP = {
     ["Memory", "The WebAssembly memory of the cut."],
     ["Storage", "The files of this site: the input from Get, the temporary files and the result."],
     ["Steps", "Each step gets its time when it ends. Move the pointer on a step to see its details."],
+    ["read, storage", "Under a step: the time that the cut waited in it for the input file (read) and for the storage of this site (storage: the temporary files and the result). The rest of the step is the work on the threads. When storage is most of a step, more threads do not make that step faster."],
   ]],
   files: ["Files", [
     ["Save all to a folder", "Writes all files into a folder that you select (Chrome and Edge on a computer)."],
@@ -595,12 +596,24 @@ $("start").addEventListener("click", async () => {
     const li = document.createElement("li");
     li.dataset.step = id;
     li.innerHTML = `<span>${id}</span><b></b><span class="t"></span>`;
-    li.querySelector("b").textContent = label;
+    li.querySelector("b").append(label, Object.assign(document.createElement("small"), { className: "io" }));
     return li;
   }));
   const t0 = performance.now();
   let shared = null, lastT = null, panic = null;
-  let stepStart = performance.now();     // the running step: its time counts up in the list (a long step is not frozen)
+  let stepStart = performance.now();
+  // the waits of the thread of the cut for the input file and for the storage, at the end of the last step (worker.js)
+  let io = { read: 0, store: 0 };
+  const sec = (ms) => `${(ms / 1000).toFixed(1)} s`;
+  const showIo = (li, m) => {
+    const read = m.read - io.read, store = m.store - io.store;
+    io = { read: m.read, store: m.store };
+    const small = li.querySelector(".io");
+    const add = (ms) => { small.dataset.read = (Number(small.dataset.read || 0) + ms.read); small.dataset.store = (Number(small.dataset.store || 0) + ms.store); };
+    add({ read, store });
+    const r = Number(small.dataset.read), w = Number(small.dataset.store);
+    small.textContent = r >= 50 || w >= 50 ? [r >= 50 && `read ${sec(r)}`, w >= 50 && `storage ${sec(w)}`].filter(Boolean).join(" · ") : "";
+  };     // the running step: its time counts up in the list (a long step is not frozen)
   let top = 0;     // the most WebAssembly memory of this cut
   const show = (bytes) => { top = Math.max(top, bytes); $("memory").textContent = mib(bytes); };
   timer = setInterval(() => {
@@ -630,7 +643,7 @@ $("start").addEventListener("click", async () => {
       // the box "Step" shows the code of the step only (its name is in the list of steps); before the cut: "start"
       $("stage").textContent = "start";
       $("stage").title = m.name;
-      if (m.name === "cut") { lastT = m.t; stepStart = performance.now(); $("steps").firstElementChild.classList.add("run"); $("stage").textContent = steps[0][0]; $("stage").title = steps[0][1]; }
+      if (m.name === "cut") { lastT = m.t; stepStart = performance.now(); io = { read: m.read, store: m.store }; $("steps").firstElementChild.classList.add("run"); $("stage").textContent = steps[0][0]; $("stage").title = steps[0][1]; }
     } else if (m.type === "memory") {
       shared = m.memory;
       show(m.bytes);
@@ -642,7 +655,9 @@ $("start").addEventListener("click", async () => {
       if (li) {
         li.classList.add("done");
         $("bar").style.width = `${(100 * $("steps").querySelectorAll(".done").length) / steps.length}%`;
-        li.querySelector("b").textContent = text.replace(/ \(.*$/, "");
+        const b = li.querySelector("b");
+        b.replaceChildren(text.replace(/ \(.*$/, ""), b.querySelector(".io"));
+        showIo(li, m);
         li.title = text;
         li.querySelector(".t").textContent = `${((m.t - lastT) / 1000).toFixed(2)} s`;
         lastT = m.t;
@@ -652,6 +667,9 @@ $("start").addEventListener("click", async () => {
         $("stage").title = next ? next[1] : "";
       }
     } else if (m.type === "done") {
+      // the last writes of the tile files come after the last step: they count for it
+      const last = [...$("steps").querySelectorAll("li.done")].pop();
+      if (last) showIo(last, m);
       for (const x of $("steps").children) x.classList.remove("run");
       $("stage").textContent = "done";
       show(m.memory);
@@ -720,21 +738,51 @@ async function result({ report, parts, bytes }) {
   $("save-text").textContent = "";
 }
 // one .zip of all files (stored: the blocks are compressed already), for each browser
+// the progress of a save: the bar and the text; null hides the bar
+function saveProgress(done, total, what) {
+  $("save-bar").hidden = done === null;
+  if (done === null) return;
+  $("save-bar").value = total ? done / total : 0;
+  $("save-text").textContent = `${what}: ${mib(done)} of ${mib(total)}`;
+}
+// one .zip of all files (stored: the blocks are compressed already), for each browser. With a save dialog (Chrome,
+// Edge) the page writes the .zip itself and shows its progress; else the browser downloads it and shows the progress in
+// its list of downloads.
 $("zip").addEventListener("click", async () => {
   const { all, files } = saved;
+  const name = `pbfcut-${{ tiles: `zoom-${$("zoom").value}`, h3: `h3-${$("res").value}`, areas: "areas" }[kind()]}.zip`;
+  let target = null;
+  if (self.showSaveFilePicker) {
+    try { target = await showSaveFilePicker({ suggestedName: name, types: [{ description: "ZIP", accept: { "application/zip": [".zip"] } }] }); }
+    catch { return; }                // the dialog was closed
+  }
+  const label = $("zip").textContent;
   $("zip").disabled = true;
+  $("zip").textContent = "Making the .zip…";
   const start = performance.now();
   try {
     const blob = await zipBlob(files.map((f) => ({ name: f.file, crc: f.crc, blob: new Blob(f.parts.map(([s, n]) => all.slice(s, s + n))) })),
       (i, n) => { $("save-text").textContent = `Making the .zip: ${i} of ${n} files`; }, self.zip64ForTest === true);
-    const name = `pbfcut-${{ tiles: `zoom-${$("zoom").value}`, h3: `h3-${$("res").value}`, areas: "areas" }[kind()]}.zip`;
-    const url = URL.createObjectURL(blob);
-    Object.assign(document.createElement("a"), { href: url, download: name }).click();
-    setTimeout(() => URL.revokeObjectURL(url), 60000);
-    $("save-text").textContent = `${name}: ${files.length} files, ${mib(blob.size)} (${((performance.now() - start) / 1000).toFixed(1)} s).`;
+    if (target) {
+      $("zip").textContent = "Saving the .zip…";
+      const w = await target.createWritable();
+      for (let at = 0; at < blob.size; at += 64 << 20) {
+        await w.write(blob.slice(at, at + (64 << 20)));
+        saveProgress(Math.min(blob.size, at + (64 << 20)), blob.size, `Saving ${target.name}`);
+      }
+      await w.close();
+      $("save-text").textContent = `${target.name} is saved: ${files.length} files, ${mib(blob.size)} (${((performance.now() - start) / 1000).toFixed(1)} s).`;
+    } else {
+      const url = URL.createObjectURL(blob);
+      Object.assign(document.createElement("a"), { href: url, download: name }).click();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      $("save-text").textContent = `The browser saves ${name} (${files.length} files, ${mib(blob.size)}): its list of downloads shows the progress.`;
+    }
   } catch (e) {
     $("save-text").textContent = `The .zip stopped: ${e.message}`;
   }
+  saveProgress(null);
+  $("zip").textContent = label;
   $("zip").disabled = false;
 });
 $("save").addEventListener("click", async () => {
@@ -742,16 +790,22 @@ $("save").addEventListener("click", async () => {
   try { dir = await showDirectoryPicker({ mode: "readwrite", id: "pbfcut" }); } catch { return; }
   $("save").disabled = true;
   const { all, files } = saved;
+  const total = files.reduce((n, f) => n + f.size, 0);
+  let done = 0;
   try {
     for (const [i, f] of files.entries()) {
       const w = await (await dir.getFileHandle(f.file, { create: true })).createWritable();
-      for (const [s, n] of f.parts) await w.write(all.slice(s, s + n));
+      for (const [s, n] of f.parts) {
+        await w.write(all.slice(s, s + n));
+        done += n;
+        saveProgress(done, total, `${i + 1} of ${files.length} files`);
+      }
       await w.close();
-      $("save-text").textContent = `${i + 1} of ${files.length} files saved`;
     }
     $("save-text").textContent = `${files.length} files saved in the folder "${dir.name}".`;
   } catch (e) {
     $("save-text").textContent = `The save stopped: ${e.message}`;
   }
+  saveProgress(null);
   $("save").disabled = false;
 });

@@ -55,13 +55,34 @@ def check_plan(page, count, word):
 
 
 def zip_all(page, zip64=False):
-    """ "Download all as .zip": gives {name: bytes} of the zip (Python's zipfile checks the CRC-32 of each file)."""
+    """ "Download all as .zip": gives {name: bytes} of the zip (Python's zipfile checks the CRC-32 of each file). With a
+    save dialog (Chromium) the dialog gives a file in OPFS; with none (as Firefox), the browser downloads the zip."""
     import io
     import zipfile
     page.evaluate(f"self.zip64ForTest = {'true' if zip64 else 'false'}")
-    with page.expect_download(timeout=120000) as d:
+    page.evaluate("document.querySelector('#save-text').textContent = ''")
+    if page.evaluate("'showSaveFilePicker' in self"):
+        page.evaluate("""self.showSaveFilePicker = async () => {
+            const root = await navigator.storage.getDirectory();
+            self.zipName = `test-${Date.now()}.zip`;
+            return root.getFileHandle(self.zipName, { create: true });
+        }""")
         page.click("#zip")
-    z = zipfile.ZipFile(io.BytesIO(Path(d.value.path()).read_bytes()))
+        page.wait_for_function("/is saved|stopped/.test(document.querySelector('#save-text').textContent)", timeout=120000)
+        assert "is saved" in page.text_content("#save-text"), page.text_content("#save-text")
+        data = page.evaluate("""async () => {
+            const f = await (await (await navigator.storage.getDirectory()).getFileHandle(self.zipName)).getFile();
+            const b = new Uint8Array(await f.arrayBuffer());
+            let s = ''; for (let i = 0; i < b.length; i += 32768) s += String.fromCharCode(...b.subarray(i, i + 32768));
+            return btoa(s);
+        }""")
+        raw = base64.b64decode(data)
+    else:
+        with page.expect_download(timeout=120000) as d:
+            page.click("#zip")
+        raw = Path(d.value.path()).read_bytes()
+        assert "list of downloads" in page.text_content("#save-text"), page.text_content("#save-text")
+    z = zipfile.ZipFile(io.BytesIO(raw))
     assert z.testzip() is None and all(i.compress_type == zipfile.ZIP_STORED for i in z.infolist())
     return {i.filename: z.read(i) for i in z.infolist()}
 
@@ -367,7 +388,7 @@ def main():
             phone.set_input_files("#file", str(PBF))
             phone.set_input_files("#boundary", str(AREA))     # this test file has no bounding box in its header
             # a browser with no folder picker (Firefox, Safari): only the .zip
-            phone.evaluate("delete self.showDirectoryPicker; delete Window.prototype.showDirectoryPicker")
+            phone.evaluate("delete self.showDirectoryPicker; delete Window.prototype.showDirectoryPicker; delete self.showSaveFilePicker; delete Window.prototype.showSaveFilePicker")
             phone.select_option("#zoom", "14")
             check_plan(phone, cli_count("tiles", PBF, "--zoom", "14", "--boundary", AREA), "tile")
             if shots:
