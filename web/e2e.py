@@ -224,6 +224,15 @@ def main():
             for name in want:
                 assert got[name] == want[name], f"{name}: the page and the command line differ"
             print(f"desktop: {len(got)} files equal the files of the command line")
+            # compression off: raw blocks, byte-equal to --no-compression, and larger
+            page.uncheck("#compress")
+            print("desktop, compression off:", cut(page, threads=4))
+            raw = save_all(page)
+            want_raw = cli_files(Path(tmp) / "raw", "tiles", PBF, "--zoom", "14", "--no-compression")
+            assert raw == want_raw, f"compression off: page {sorted(raw)}, command line {sorted(want_raw)}"
+            assert sum(map(len, raw.values())) > sum(map(len, got.values())), "raw files are not larger"
+            page.check("#compress")
+            print(f"desktop, compression off: {len(raw)} files equal --no-compression")
             # a refresh removes all files of the site (the tile files, the temporary files, the saved folder)
             page.reload()
             page.wait_for_function("self.crossOriginIsolated === true")

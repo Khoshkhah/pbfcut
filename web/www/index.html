@@ -95,6 +95,8 @@
   dialog dt:first-child { border-top: 0; padding-top: 0; }
   dialog dd { margin: 2px 0 10px; font-size: .86rem; color: var(--muted); }
   dialog form { text-align: right; margin-top: 6px; }
+  label.check { display: flex; align-items: center; gap: 8px; margin: 12px 0 0; font-size: .88rem; color: var(--text); cursor: pointer; }
+  label.check input { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
   /* the matches of the region search */
   .combo { position: relative; }
   #region-list { position: absolute; z-index: 5; left: 0; right: 0; top: calc(100% + 4px); margin: 0; padding: 4px; list-style: none;
@@ -162,6 +164,7 @@
     <div data-kind="tiles h3"><label for="border">Border (m)</label><input id="border" type="number" min="0" step="1" value="0"></div>
     <div><label for="threads">Threads</label><input id="threads" type="number" min="1" max="64" value="4"></div>
   </div>
+  <label class="check"><input id="compress" type="checkbox" checked> Compress the files</label>
   <div class="row" data-kind="areas" hidden>
     <label for="areas" style="margin:0">Areas</label>
     <input id="areas" type="file" accept=".geojson,.json">

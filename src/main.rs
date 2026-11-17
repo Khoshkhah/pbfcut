@@ -16,8 +16,10 @@ const USAGE: &str = "usage:
   pbfcut h3 IN.osm.pbf --res R [OPTIONS] -o DIR
   pbfcut areas IN.osm.pbf --areas AREAS.geojson|CONFIG.json [--name PROPERTY] [OPTIONS] [-o DIR]
   pbfcut compare DIR_A DIR_B
-OPTIONS: [--boundary FILE | --bbox W,S,E,N] [--border METRES] [--complete TYPES] [--memory SIZE] [--temp DIR] [--steps]
-  FILE: GeoJSON, an osmosis .poly file or WKT; --border: tiles and h3 only";
+OPTIONS: [--boundary FILE | --bbox W,S,E,N] [--border METRES] [--complete TYPES] [--no-compression] [--memory SIZE]
+         [--temp DIR] [--steps]
+  FILE: GeoJSON, an osmosis .poly file or WKT; --border: tiles and h3 only
+  --no-compression: raw blocks, not zlib (a faster cut, larger files with the same elements)";
 
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
@@ -98,7 +100,8 @@ fn cut(args: &[String], kind: &str) -> Result<(), String> {
         },
     };
     let start = Instant::now();
-    let r = pbfcut::job::cut(Path::new(input), &out, &grid, given, &complete, border)?;
+    let compress = !args.iter().any(|a| a == "--no-compression");
+    let r = pbfcut::job::cut(Path::new(input), &out, &grid, given, &complete, border, compress)?;
     let key = r.key;
     let files: Vec<_> = r
         .files

@@ -49,6 +49,7 @@ The options are keyword arguments, as on [the command line](cli.md):
 | `memory` | Bytes, or a text such as `"4G"` or `"512M"`. Default: `2G`. |
 | `temp` | The folder of the temporary files. |
 | `threads` | The number of threads. Default: all processors. |
+| `compress` | `True` (default): zlib blocks. `False`: raw blocks, as `--no-compression`: a faster cut, larger files. |
 
 Paths can be `str` or `pathlib.Path`.
 

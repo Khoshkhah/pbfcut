@@ -43,7 +43,7 @@ fn cell_files_equal_the_cut_of_each_cell() {
     let list = cells(&Boundary::parse(area).unwrap(), res);
     let world = Boundary::parse(pbfcut::boundary::WORLD).unwrap();
     let (a, b) = (temp("cut"), temp("reference"));
-    let counts = pbfcut::tilecut::cut_to_cells(open, &world, &list, &a, &["multipolygon"], 0.0).unwrap();
+    let counts = pbfcut::tilecut::cut_to_cells(open, &world, &list, &a, &["multipolygon"], 0.0, true).unwrap();
     let mut files = 0;
     for (c, n) in list.iter().zip(&counts).filter(|(_, n)| n.nodes > 0) {
         let inside = |lon: f64, lat: f64| cell_of(res, lon, lat) == Some(*c);
@@ -69,7 +69,7 @@ fn cell_files_equal_the_reference() {
     for (variant, border) in [("cells-r9", 0.0), ("cells-r9-border25", 25.0)] {
         let dir = temp(variant);
         let list = cells(&monaco, Resolution::Nine);
-        pbfcut::tilecut::cut_to_cells(open, &monaco, &list, &dir, &["multipolygon", "boundary"], border).unwrap();
+        pbfcut::tilecut::cut_to_cells(open, &monaco, &list, &dir, &["multipolygon", "boundary"], border, true).unwrap();
         let got: BTreeMap<String, String> = list
             .iter()
             .filter_map(|c| {
@@ -97,9 +97,9 @@ fn a_wide_border_or_two_resolutions_is_an_error() {
     let open = || std::fs::File::open(&pbf).map(std::io::BufReader::new).map_err(|e| e.to_string());
     let list = cells(&monaco, Resolution::Nine);
     let dir = temp("wide");
-    assert!(pbfcut::tilecut::cut_to_cells(open, &monaco, &list, &dir, &[], 150.0).is_err());
+    assert!(pbfcut::tilecut::cut_to_cells(open, &monaco, &list, &dir, &[], 150.0, true).is_err());
     // cells of two resolutions
     let mixed = [list[0], list[1].parent(Resolution::Eight).unwrap()];
-    assert!(pbfcut::tilecut::cut_to_cells(open, &monaco, &mixed, &dir, &[], 0.0).is_err());
+    assert!(pbfcut::tilecut::cut_to_cells(open, &monaco, &mixed, &dir, &[], 0.0, true).is_err());
     std::fs::remove_dir_all(&dir).unwrap();
 }

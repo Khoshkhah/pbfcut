@@ -51,6 +51,7 @@ def cut_tiles(
     memory: Optional[Size] = None,
     temp: Optional[Path] = None,
     threads: Optional[int] = None,
+    compress: bool = True,
 ) -> Report:
     """Cut input into the map tiles of zoom (or of the list file tiles: one z/x/y on each line) in out_dir."""
 
@@ -65,6 +66,7 @@ def cut_cells(
     memory: Optional[Size] = None,
     temp: Optional[Path] = None,
     threads: Optional[int] = None,
+    compress: bool = True,
 ) -> Report:
     """Cut input into the H3 cells of resolution res (0 to 15) in out_dir."""
 
@@ -79,6 +81,7 @@ def cut_areas(
     memory: Optional[Size] = None,
     temp: Optional[Path] = None,
     threads: Optional[int] = None,
+    compress: bool = True,
 ) -> Report:
     """Cut input into the areas of a GeoJSON FeatureCollection or an osmium config file, in out_dir."""
 

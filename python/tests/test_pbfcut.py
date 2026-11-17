@@ -42,6 +42,16 @@ def test_tiles(tmp_path):
     same(r, tmp_path / "cli", tmp_path / "py", out)
 
 
+def test_no_compression(tmp_path):
+    """compress=False equals --no-compression, has the elements of the zlib files, and gives larger files."""
+    out = cli("tiles", PBF, "--zoom", 14, "--boundary", DATA / "monaco.geojson", "--no-compression", "-o", tmp_path / "cli")
+    r = pbfcut.cut_tiles(PBF, tmp_path / "py", zoom=14, boundary=DATA / "monaco.geojson", compress=False)
+    same(r, tmp_path / "cli", tmp_path / "py", out)
+    z = pbfcut.cut_tiles(PBF, tmp_path / "zlib", zoom=14, boundary=DATA / "monaco.geojson")
+    assert pbfcut.compare(tmp_path / "zlib", tmp_path / "py") == []
+    assert 2 * sum(f["bytes"] for f in r["files"]) > 3 * sum(f["bytes"] for f in z["files"])
+
+
 def test_tiles_bbox_border(tmp_path):
     out = cli("tiles", PBF, "--zoom", 15, "--bbox", "7.40,43.72,7.44,43.76", "--border", 50, "-o", tmp_path / "cli")
     r = pbfcut.cut_tiles(str(PBF), str(tmp_path / "py"), 15, boundary=(7.40, 43.72, 7.44, 43.76), border=50)

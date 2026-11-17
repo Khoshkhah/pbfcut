@@ -86,7 +86,7 @@ fn cut(z: u8, memory: usize) -> (Vec<(String, Vec<u8>)>, f64) {
     pbfcut::store::set_memory(memory);
     PEAK.store(LIVE.load(Relaxed), Relaxed);
     let start = LIVE.load(Relaxed);
-    pbfcut::tilecut::cut_to_tiles(open, &monaco, &list, &dir, &["multipolygon", "boundary"], 0.0, None).unwrap();
+    pbfcut::tilecut::cut_to_tiles(open, &monaco, &list, &dir, &["multipolygon", "boundary"], 0.0, None, true).unwrap();
     let peak = (PEAK.load(Relaxed) - start) as f64 / 1048576.0;
     let mut files: Vec<(String, Vec<u8>)> = std::fs::read_dir(&dir)
         .unwrap()
