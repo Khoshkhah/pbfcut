@@ -5,6 +5,9 @@ complete `.osm.pbf` file: each way comes with all its nodes, and each multipolyg
 
 The cut is the Rust code of pbfcut. This package runs it from Python, and gives the same files as the command line.
 
+**Try it online:** <https://khoshkhah.github.io/pbfcut/>. The same cut in the browser, with no installation. The file
+stays on your computer.
+
 - **Fast, with little memory.** Faster than `osmium extract`, with much less memory, also for thousands of tiles.
 - **Three kinds of cut.** Map tiles (`z_x_y`), H3 cells, or a list of areas (GeoJSON or an `osmium extract` config).
 - **A boundary.** Keep only the data inside a GeoJSON, `.poly` or WKT file, or inside a box.
