@@ -28,6 +28,12 @@ $("areas").addEventListener("change", ready);
 // It accepts only files of download.geofabrik.de and only some origins. ?relay=<address> gives another relay
 // (serve.py has one: ?relay=relay).
 const relay = new URLSearchParams(location.search).get("relay") ?? "https://duckosm-relay.khoshkhah.workers.dev";
+// ?memory=3G (or 3072M) sets the memory budget of the cut, for a test; else the default of the library (2G). The
+// WebAssembly memory has at most 4 GiB in all.
+const budgetMib = (() => {
+  const m = (new URLSearchParams(location.search).get("memory") ?? "").match(/^(\d+)([MG])$/i);
+  return m ? Math.min(Number(m[1]) * (m[2].toUpperCase() === "G" ? 1024 : 1), 3584) : 0;
+})();
 const mib = (b) => b >= 1 << 30 ? `${(b / 2 ** 30).toFixed(2)} GiB` : `${(b / 2 ** 20).toFixed(1)} MiB`;
 const regionsDir = () => navigator.storage.getDirectory().then((d) => d.getDirectoryHandle("regions", { create: true }));
 const fileName = (id) => id.replace(/[^a-z0-9_-]/gi, "_") + ".osm.pbf";
@@ -609,7 +615,7 @@ $("start").addEventListener("click", async () => {
   const msg = {
     dir: cutDir, kind: kind(), areas: kind() === "areas" ? await areasText($("areas").files[0]) : null,
     level: Number($(kind() === "h3" ? "res" : "zoom").value), border: Number($("border").value) || 0, threads: Number($("threads").value) || 1,
-    boundary, complete: "multipolygon,boundary", compress: $("compress").checked,
+    boundary, complete: "multipolygon,boundary", compress: $("compress").checked, memory: budgetMib,
     ...(source() === "file" ? { file: $("file").files[0] } : { region: fileName(region.id) }),
   };
   $("progress").hidden = false;

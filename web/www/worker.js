@@ -133,7 +133,7 @@ onmessage = async ({ data: o }) => {
       size = o.file.size;
     }
     postMessage({ type: "stage", name: "cut", t: performance.now(), read: readMs, store: storeMs });
-    const report = JSON.parse(m.cut(size, o.kind, o.level, o.boundary, o.border, o.complete, 0, o.areas, o.compress));
+    const report = JSON.parse(m.cut(size, o.kind, o.level, o.boundary, o.border, o.complete, o.memory || 0, o.areas, o.compress));
     for (const t of [...held.keys()]) flushTile(t);
     timed(addStore, () => { out.flush(); out.close(); });
     for (const h of pool) h.close();
