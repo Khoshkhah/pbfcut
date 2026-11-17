@@ -197,7 +197,7 @@ dependencies = [
 
 [[package]]
 name = "pbfcut"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "flate2",
  "h3o",
@@ -208,7 +208,7 @@ dependencies = [
 
 [[package]]
 name = "pbfcut-web"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "crc32fast",
  "pbfcut",
