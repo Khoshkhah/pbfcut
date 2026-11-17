@@ -215,6 +215,7 @@ async function setRegion(x) {
     const kept = await (await regionsDir()).getFileHandle(fileName(region.id)).then((h) => h.getFile(), () => null);
     if (kept && region === x) {
       regionReady = true;
+      regionSize = kept.size;
       $("get-text").textContent = `The file is in the storage of this site (${mib(kept.size)}).`;
       $("get").textContent = "Get it again";
     } else $("get").textContent = "Get";
@@ -357,6 +358,7 @@ $("get").addEventListener("click", async () => {
       $("get-text").textContent = `${mib(n)}${total ? " of " + mib(total) : ""}, ${((performance.now() - start) / 1000).toFixed(1)} s`;
     }, signal);
     regionReady = region === x;
+    regionSize = got;
     $("get-text").textContent = `The file is in the storage of this site (${mib(got)}, ${((performance.now() - start) / 1000).toFixed(1)} s).`;
   } catch (e) {
     $("get-text").textContent = signal.aborted ? "The download is canceled." : `The download stopped: ${e.message}`;
@@ -372,7 +374,11 @@ $("get").addEventListener("click", async () => {
 // Other browsers, or no relay: the plain link to Geofabrik (one connection, slow).
 $("link").addEventListener("click", async (e) => {
   const x = region;
-  if (!x || !relay || !window.showSaveFilePicker) return;
+  if (!x || !relay || !window.showSaveFilePicker) {
+    // no save dialog (Brave, Firefox, Safari): the browser downloads the file from Geofabrik by itself
+    $("get-text").textContent = `The browser downloads ${x ? x.pbf.split("/").pop() : "the file"} from Geofabrik: its list of downloads shows the progress. When it is done, choose the file under Local file.`;
+    return;
+  }
   e.preventDefault();
   let file;
   try { file = await showSaveFilePicker({ suggestedName: x.pbf.split("/").pop(), types: [{ description: "OSM PBF", accept: { "application/octet-stream": [".pbf"] } }] }); }
@@ -386,7 +392,17 @@ $("link").addEventListener("click", async (e) => {
       $("get-bar").value = total ? n / total : 0;
       $("get-text").textContent = `Download: ${mib(n)}${total ? " of " + mib(total) : ""}, ${((performance.now() - start) / 1000).toFixed(1)} s`;
     }, signal, () => file.createWritable());
+    // the saved file is the input of the cut at once: "Local file" with this file
+    const dt = new DataTransfer();
+    dt.items.add(await file.getFile());
+    $("file").files = dt.files;
+    $("src-f").checked = true;
+    $("src-region").hidden = true;
+    $("src-file").hidden = false;
+    resetNote();
+    ready();
     $("get-text").textContent = `The file is saved as ${file.name} (${mib(got)}, ${((performance.now() - start) / 1000).toFixed(1)} s).`;
+    $("input-text").textContent += " · saved by Download";
   } catch (e) {
     $("get-text").textContent = signal.aborted ? "The download is canceled." : `The download stopped: ${e.message}`;
   }
@@ -402,7 +418,15 @@ $("threads").value = isolated ? navigator.hardwareConcurrency || 4 : 1;
 $("threads").disabled = !isolated;
 $("threads-hint").textContent = isolated ? "" : "This page is not cross-origin isolated, so the cut uses one thread.";
 
+// the input of the cut, with its size: the local file, or the file of the region in the storage of this site
+let regionSize = 0;
+function showInput() {
+  const f = source() === "file" ? $("file").files[0] : null;
+  $("input-text").textContent = f ? `Input: ${f.name}, ${mib(f.size)}`
+    : source() === "region" && regionReady && region ? `Input: ${region.pbf.split("/").pop()}, ${mib(regionSize)} (in the storage of this site)` : "";
+}
 function ready() {
+  showInput();
   updateStart();
   askPlan();
 }

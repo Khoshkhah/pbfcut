@@ -103,7 +103,20 @@ with sync_playwright() as p:
             saved = pg.evaluate("""async () => { const f = await (await (await navigator.storage.getDirectory()).getFileHandle('saved.pbf')).getFile(); const b = await crypto.subtle.digest('SHA-256', await f.arrayBuffer()); return f.size + ' ' + [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join(''); }""")
             print("  download |", pg.text_content("#get-text"), "|", "OK" if saved == f"{len(DATA)} {SHA}" else f"WRONG {saved}")
             assert saved == f"{len(DATA)} {SHA}"
+            # the saved file is the input of the cut at once, with its name and size
+            assert pg.is_checked("#src-f") and pg.evaluate("document.querySelector('#file').files[0]?.size") == len(DATA)
+            assert pg.text_content("#input-text").startswith(f"Input: saved.pbf, "), pg.text_content("#input-text")
+            print("  download | the input of the cut:", pg.text_content("#input-text"))
         ctx.close()
+    # no save dialog (Brave, Firefox): the browser downloads the file by itself, and the page says so
+    ctx = b.new_context(); pg = ctx.new_page()
+    pg.route("https://download.geofabrik.de/**", lambda r: r.fulfill(status=200, body=b"x", headers={"Content-Type": "application/octet-stream", "Content-Disposition": "attachment"}))
+    pg.goto(f"http://localhost:{port}/index.html?relay=/relay"); pg.wait_for_timeout(2000); pg.reload(); pg.wait_for_timeout(2000)
+    pg.evaluate("delete self.showSaveFilePicker; delete Window.prototype.showSaveFilePicker")
+    pg.fill("#region", "Europe / Monaco"); pg.dispatch_event("#region", "input"); pg.click("#link")
+    pg.wait_for_function("/list of downloads/.test(document.querySelector('#get-text').textContent)", timeout=10000)
+    print("no save dialog |", pg.text_content("#get-text"))
+    ctx.close()
     # Cancel: the download stops, and no part of the file stays in the storage
     H.ranges, H.flaky, H.hit, H.slow = True, False, False, True
     ctx = b.new_context(); pg = ctx.new_page()
