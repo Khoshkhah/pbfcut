@@ -229,6 +229,17 @@ def main():
             page.wait_for_function("document.querySelector('#plan-text').textContent.startsWith('This cut cannot start')", timeout=60000)
             print("desktop, a bad boundary:", page.text_content("#plan-text"))
             page.set_input_files("#boundary", str(AREA))
+            # Stop: the cut stops, and its files go from the storage at once
+            page.click("#start")
+            page.wait_for_function("!document.querySelector('#stop').disabled")
+            page.click("#stop")
+            page.wait_for_function("""async () => {
+                const names = [];
+                for await (const n of (await navigator.storage.getDirectory()).keys()) names.push(n);
+                return !names.includes("cut") && document.querySelector('#stage').textContent === 'stopped';
+            }""", timeout=30000)
+            assert page.is_enabled("#start") and page.is_disabled("#stop")
+            print("desktop: Stop stops the cut and removes its files")
             print("desktop:", cut(page, threads=4))
             assert page.text_content("#threads-hint") == ""
             got = save_all(page)

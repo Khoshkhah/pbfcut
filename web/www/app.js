@@ -588,11 +588,14 @@ $("start").addEventListener("click", async () => {
   }));
   const t0 = performance.now();
   let shared = null, lastT = null, panic = null;
+  let stepStart = performance.now();     // the running step: its time counts up in the list (a long step is not frozen)
   let top = 0;     // the most WebAssembly memory of this cut
   const show = (bytes) => { top = Math.max(top, bytes); $("memory").textContent = mib(bytes); };
   timer = setInterval(() => {
     $("time").textContent = `${((performance.now() - t0) / 1000).toFixed(1)} s`;
     if (shared) show(shared.buffer.byteLength);
+    const run = $("steps").querySelector("li.run .t");
+    if (run) run.textContent = `${((performance.now() - stepStart) / 1000).toFixed(0)} s`;
   }, 200);
   const used = async () => {
     const e = await navigator.storage.estimate();
@@ -615,7 +618,7 @@ $("start").addEventListener("click", async () => {
       // the box "Step" shows the code of the step only (its name is in the list of steps); before the cut: "start"
       $("stage").textContent = "start";
       $("stage").title = m.name;
-      if (m.name === "cut") { lastT = m.t; $("steps").firstElementChild.classList.add("run"); $("stage").textContent = steps[0][0]; $("stage").title = steps[0][1]; }
+      if (m.name === "cut") { lastT = m.t; stepStart = performance.now(); $("steps").firstElementChild.classList.add("run"); $("stage").textContent = steps[0][0]; $("stage").title = steps[0][1]; }
     } else if (m.type === "memory") {
       shared = m.memory;
       show(m.bytes);
@@ -631,6 +634,7 @@ $("start").addEventListener("click", async () => {
         li.title = text;
         li.querySelector(".t").textContent = `${((m.t - lastT) / 1000).toFixed(2)} s`;
         lastT = m.t;
+        stepStart = performance.now();
         const next = steps[[...$("steps").children].indexOf(li) + 1];
         $("stage").textContent = next ? next[0] : "the end";
         $("stage").title = next ? next[1] : "";
@@ -655,9 +659,17 @@ $("start").addEventListener("click", async () => {
   worker.postMessage(msg);
   $("start").disabled = true;
   $("stop").disabled = false;
-  $("stop").onclick = () => {
+  $("stop").onclick = async () => {
     end();
     $("stage").textContent = "stopped";
+    // the files of the stopped cut go at once (the temporary files and the part of the result): the worker closes its
+    // files when it stops, so the removal tries again for some seconds
+    const root = await navigator.storage.getDirectory();
+    for (let i = 0; i < 40; i++) {
+      try { await root.removeEntry("cut", { recursive: true }); break; }
+      catch (e) { if (e.name === "NotFoundError") break; await new Promise((ok) => setTimeout(ok, 250)); }
+    }
+    used();
   };
 });
 
