@@ -738,21 +738,51 @@ async function result({ report, parts, bytes }) {
   $("save-text").textContent = "";
 }
 // one .zip of all files (stored: the blocks are compressed already), for each browser
+// the progress of a save: the bar and the text; null hides the bar
+function saveProgress(done, total, what) {
+  $("save-bar").hidden = done === null;
+  if (done === null) return;
+  $("save-bar").value = total ? done / total : 0;
+  $("save-text").textContent = `${what}: ${mib(done)} of ${mib(total)}`;
+}
+// one .zip of all files (stored: the blocks are compressed already), for each browser. With a save dialog (Chrome,
+// Edge) the page writes the .zip itself and shows its progress; else the browser downloads it and shows the progress in
+// its list of downloads.
 $("zip").addEventListener("click", async () => {
   const { all, files } = saved;
+  const name = `pbfcut-${{ tiles: `zoom-${$("zoom").value}`, h3: `h3-${$("res").value}`, areas: "areas" }[kind()]}.zip`;
+  let target = null;
+  if (self.showSaveFilePicker) {
+    try { target = await showSaveFilePicker({ suggestedName: name, types: [{ description: "ZIP", accept: { "application/zip": [".zip"] } }] }); }
+    catch { return; }                // the dialog was closed
+  }
+  const label = $("zip").textContent;
   $("zip").disabled = true;
+  $("zip").textContent = "Making the .zip…";
   const start = performance.now();
   try {
     const blob = await zipBlob(files.map((f) => ({ name: f.file, crc: f.crc, blob: new Blob(f.parts.map(([s, n]) => all.slice(s, s + n))) })),
       (i, n) => { $("save-text").textContent = `Making the .zip: ${i} of ${n} files`; }, self.zip64ForTest === true);
-    const name = `pbfcut-${{ tiles: `zoom-${$("zoom").value}`, h3: `h3-${$("res").value}`, areas: "areas" }[kind()]}.zip`;
-    const url = URL.createObjectURL(blob);
-    Object.assign(document.createElement("a"), { href: url, download: name }).click();
-    setTimeout(() => URL.revokeObjectURL(url), 60000);
-    $("save-text").textContent = `${name}: ${files.length} files, ${mib(blob.size)} (${((performance.now() - start) / 1000).toFixed(1)} s).`;
+    if (target) {
+      $("zip").textContent = "Saving the .zip…";
+      const w = await target.createWritable();
+      for (let at = 0; at < blob.size; at += 64 << 20) {
+        await w.write(blob.slice(at, at + (64 << 20)));
+        saveProgress(Math.min(blob.size, at + (64 << 20)), blob.size, `Saving ${target.name}`);
+      }
+      await w.close();
+      $("save-text").textContent = `${target.name} is saved: ${files.length} files, ${mib(blob.size)} (${((performance.now() - start) / 1000).toFixed(1)} s).`;
+    } else {
+      const url = URL.createObjectURL(blob);
+      Object.assign(document.createElement("a"), { href: url, download: name }).click();
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+      $("save-text").textContent = `The browser saves ${name} (${files.length} files, ${mib(blob.size)}): its list of downloads shows the progress.`;
+    }
   } catch (e) {
     $("save-text").textContent = `The .zip stopped: ${e.message}`;
   }
+  saveProgress(null);
+  $("zip").textContent = label;
   $("zip").disabled = false;
 });
 $("save").addEventListener("click", async () => {
@@ -760,16 +790,22 @@ $("save").addEventListener("click", async () => {
   try { dir = await showDirectoryPicker({ mode: "readwrite", id: "pbfcut" }); } catch { return; }
   $("save").disabled = true;
   const { all, files } = saved;
+  const total = files.reduce((n, f) => n + f.size, 0);
+  let done = 0;
   try {
     for (const [i, f] of files.entries()) {
       const w = await (await dir.getFileHandle(f.file, { create: true })).createWritable();
-      for (const [s, n] of f.parts) await w.write(all.slice(s, s + n));
+      for (const [s, n] of f.parts) {
+        await w.write(all.slice(s, s + n));
+        done += n;
+        saveProgress(done, total, `${i + 1} of ${files.length} files`);
+      }
       await w.close();
-      $("save-text").textContent = `${i + 1} of ${files.length} files saved`;
     }
     $("save-text").textContent = `${files.length} files saved in the folder "${dir.name}".`;
   } catch (e) {
     $("save-text").textContent = `The save stopped: ${e.message}`;
   }
+  saveProgress(null);
   $("save").disabled = false;
 });
