@@ -4,7 +4,7 @@ The crate `pbfcut` is the library under the command line and the Python package.
 from GitHub.
 
 ```bash
-cargo add --git https://github.com/Khoshkhah/pbfcut pbfcut     # add tag = "v0.2.1" in Cargo.toml for a fixed version
+cargo add --git https://github.com/Khoshkhah/pbfcut pbfcut     # add tag = "v0.2.2" in Cargo.toml for a fixed version
 ```
 
 ## Cut to a folder
