@@ -88,7 +88,7 @@ the code shorter, not faster.
 | Option | `cut_to_tiles` | `cut_to_store`, `cut_to_sink` |
 |---|---|---|
 | Output | files in a folder | a temporary store, or a sink (the browser) |
-| zlib in the tile files | yes | no (a file that a program reads one time, soon after) |
+| zlib in the tile files | yes | `cut_to_store`: no (a file that a program reads one time, soon after); `cut_to_sink`: yes; `cut_raw_to_sink`: no |
 | `border_m` | a way within this distance of a tile goes to that tile too | 0 |
 | `NodeUses` | optional: a junctions file for each tile | none |
 | Zooms | one zoom when the border is not 0, else mixed | one zoom, or mixed zooms |
