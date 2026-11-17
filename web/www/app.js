@@ -568,9 +568,10 @@ $("start").addEventListener("click", async () => {
   $("error").hidden = true;
   await cleaned;
   const boundary = (await boundaryOf())?.text ?? null;      // the boundary file, else the outline of the region
+  cutDir = `cut-${Date.now()}`;      // the folder of this cut in the storage of the site
   const steps = STEPS[kind()];
   const msg = {
-    kind: kind(), areas: kind() === "areas" ? await areasText($("areas").files[0]) : null,
+    dir: cutDir, kind: kind(), areas: kind() === "areas" ? await areasText($("areas").files[0]) : null,
     level: Number($(kind() === "h3" ? "res" : "zoom").value), border: Number($("border").value) || 0, threads: Number($("threads").value) || 1,
     boundary, complete: "multipolygon,boundary", compress: $("compress").checked,
     ...(source() === "file" ? { file: $("file").files[0] } : { region: fileName(region.id) }),
@@ -664,9 +665,9 @@ $("start").addEventListener("click", async () => {
     $("stage").textContent = "stopped";
     // the files of the stopped cut go at once (the temporary files and the part of the result): the worker closes its
     // files when it stops, so the removal tries again for some seconds
-    const root = await navigator.storage.getDirectory();
+    const root = await navigator.storage.getDirectory(), stopped = cutDir;     // a new cut has a new folder
     for (let i = 0; i < 40; i++) {
-      try { await root.removeEntry("cut", { recursive: true }); break; }
+      try { await root.removeEntry(stopped, { recursive: true }); break; }
       catch (e) { if (e.name === "NotFoundError") break; await new Promise((ok) => setTimeout(ok, 250)); }
     }
     used();
@@ -675,9 +676,10 @@ $("start").addEventListener("click", async () => {
 
 // ---- 4. the result: one OPFS file with all tile files; `files` of the report, with `parts` (tile number -> [[start, length]])
 let saved = null;
+let cutDir = "";      // the folder of the last cut in the storage of the site (worker.js)
 async function result({ report, parts, bytes }) {
   const where = new Map(parts);
-  const all = await (await (await (await navigator.storage.getDirectory()).getDirectoryHandle("cut")).getFileHandle("tiles")).getFile();
+  const all = await (await (await (await navigator.storage.getDirectory()).getDirectoryHandle(cutDir)).getFileHandle("tiles")).getFile();
   const files = report.files.map((f) => ({ ...f, parts: where.get(f.index) ?? [] }));
   files.forEach((f) => { f.size = f.parts.reduce((s, p) => s + p[1], 0); });
   saved = { all, files };

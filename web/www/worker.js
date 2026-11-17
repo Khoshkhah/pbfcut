@@ -86,8 +86,10 @@ onmessage = async ({ data: o }) => {
     postMessage({ type: "memory", memory: threads ? memory : null, bytes: memory.buffer.byteLength });
 
     const root = await navigator.storage.getDirectory();
-    await root.removeEntry("cut", { recursive: true }).catch(() => {});
-    const dir = await root.getDirectoryHandle("cut", { create: true });
+    // a folder of its own for each cut (o.dir): a stopped cut can hold its files for a moment, and the folders of old
+    // cuts go when they can (the page removes them too)
+    for await (const name of root.keys()) if (name.startsWith("cut-") && name !== o.dir) await root.removeEntry(name, { recursive: true }).catch(() => {});
+    const dir = await root.getDirectoryHandle(o.dir, { create: true });
     const tmp = await dir.getDirectoryHandle("temp", { create: true });
     postMessage({ type: "stage", name: `opening ${POOL} temporary files in OPFS` });
     for (let i = 0; i < POOL; i++) {

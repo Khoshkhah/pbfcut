@@ -236,7 +236,7 @@ def main():
             page.wait_for_function("""async () => {
                 const names = [];
                 for await (const n of (await navigator.storage.getDirectory()).keys()) names.push(n);
-                return !names.includes("cut") && document.querySelector('#stage').textContent === 'stopped';
+                return !names.some((n) => n.startsWith("cut")) && document.querySelector('#stage').textContent === 'stopped';
             }""", timeout=30000)
             assert page.is_enabled("#start") and page.is_disabled("#stop")
             print("desktop: Stop stops the cut and removes its files")
