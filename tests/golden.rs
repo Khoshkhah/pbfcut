@@ -91,6 +91,16 @@ fn store_tile_files_equal_the_reference() {
             }
         }
         assert_eq!(got, golden(variant), "{variant}");
+        // the sink with no zlib gives the same bytes as the store (also no zlib)
+        let mut sunk: Vec<Vec<u8>> = vec![Vec::new(); list.len()];
+        let counts = pbfcut::tilecut::cut_raw_to_sink(open, &world, &list, &["multipolygon", "boundary"], &mut |t, b| {
+            sunk[t as usize].extend_from_slice(b);
+            Ok(())
+        })
+        .unwrap();
+        let got: BTreeMap<String, String> =
+            list.iter().zip(&counts).zip(&sunk).filter(|((_, c), _)| c.nodes > 0).map(|((t, _), b)| (name(t), hash(b))).collect();
+        assert_eq!(got, golden(variant), "{variant}, the sink with no zlib");
     }
 }
 

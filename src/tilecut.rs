@@ -1331,7 +1331,7 @@ pub fn cut_areas_to_sink<R: Read + Seek + Send>(
     complete: &[&str],
     sink: Sink,
 ) -> Result<Vec<CutCounts>, String> {
-    cut_into_sink(open, boundary, &Grid::areas(areas), complete, 0.0, sink)
+    cut_into_sink(open, boundary, &Grid::areas(areas), complete, 0.0, false, sink)
 }
 
 /// The grid of the cells, with an error for cells of two resolutions or a border of half the edge of a cell or more.
@@ -1454,7 +1454,20 @@ pub fn cut_to_sink<R: Read + Seek + Send>(
     border_m: f64,
     sink: Sink,
 ) -> Result<Vec<CutCounts>, String> {
-    cut_into_sink(open, boundary, &Grid::tiles(tiles), complete, border_m, sink)
+    cut_into_sink(open, boundary, &Grid::tiles(tiles), complete, border_m, false, sink)
+}
+
+/// [`cut_to_sink`] with no zlib in the tile files (the blobs hold the blocks as they are): for a program that reads each
+/// tile file one time, soon after the cut, as [`cut_to_store`]. The elements equal the files of [`cut_to_sink`]; the
+/// bytes do not. Less CPU for the cut, more bytes in the store.
+pub fn cut_raw_to_sink<R: Read + Seek + Send>(
+    open: impl Fn() -> Result<R, String>,
+    boundary: &Boundary,
+    tiles: &[Tile],
+    complete: &[&str],
+    sink: Sink,
+) -> Result<Vec<CutCounts>, String> {
+    cut_into_sink(open, boundary, &Grid::tiles(tiles), complete, 0.0, true, sink)
 }
 
 /// [`cut_to_cells`], with each cell file given to `sink` (in pieces, cell by cell), as [`cut_to_sink`] does for the
@@ -1467,7 +1480,7 @@ pub fn cut_cells_to_sink<R: Read + Seek + Send>(
     border_m: f64,
     sink: Sink,
 ) -> Result<Vec<CutCounts>, String> {
-    cut_into_sink(open, boundary, &cell_grid(cells, border_m)?, complete, border_m, sink)
+    cut_into_sink(open, boundary, &cell_grid(cells, border_m)?, complete, border_m, false, sink)
 }
 
 /// The cut into a sink (the tiles or the cells), with the temporary files in a folder natively, in the store of the
@@ -1478,12 +1491,14 @@ fn cut_into_sink<R: Read + Seek + Send>(
     grid: &Grid,
     complete: &[&str],
     border_m: f64,
+    // the tile files with no zlib ([`cut_raw_to_sink`])
+    raw: bool,
     mut sink: Sink,
 ) -> Result<Vec<CutCounts>, String> {
     #[cfg(target_arch = "wasm32")]
     {
         let files = Files::Store(Chunks::new(&*crate::store::temp_store()).map_err(|e| format!("a temporary file of the tile cut: {e}"))?);
-        Ok(cut(open, boundary, grid, complete, border_m, files, None, Some(&mut sink), false, None)?.0)
+        Ok(cut(open, boundary, grid, complete, border_m, files, None, Some(&mut sink), raw, None)?.0)
     }
     #[cfg(not(target_arch = "wasm32"))]
     {
@@ -1491,7 +1506,7 @@ fn cut_into_sink<R: Read + Seek + Send>(
         let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let tmp = crate::store::temp_dir().join(format!("pbfcut-sink-{}-{n}", std::process::id()));
         std::fs::create_dir_all(&tmp).map_err(|e| format!("{}: {e}", tmp.display()))?;
-        let cut = cut(open, boundary, grid, complete, border_m, Files::Dir(tmp.clone()), None, Some(&mut sink), false, None);
+        let cut = cut(open, boundary, grid, complete, border_m, Files::Dir(tmp.clone()), None, Some(&mut sink), raw, None);
         let _ = std::fs::remove_dir_all(&tmp);
         Ok(cut?.0)
     }
