@@ -73,6 +73,20 @@ impl Runs {
     }
 }
 
+/// The decoded runs of one page of a [`Book`] (ids `lo..hi`), for [`Book::get_cached`].
+struct PageCache {
+    lo: i64,
+    hi: i64,
+    runs: Vec<(i64, i64, u32)>,
+}
+
+impl Default for PageCache {
+    fn default() -> Self {
+        // an empty range: the first look-up decodes its page
+        PageCache { lo: 0, hi: 0, runs: Vec::new() }
+    }
+}
+
 /// The runs of a whole file, compressed (a phone book): pages of `PAGE` runs; in a page each run is three varints (the
 /// gap from the end of the run before, the length, the tile). Only the first id and the place of each page are full
 /// numbers. A look-up searches the pages, then reads at most `PAGE` runs. The last run stays open, so that the next
@@ -197,6 +211,30 @@ impl Book {
             }
         })
         .flatten()
+    }
+
+    /// [`Book::get`] with the runs of the last page in `cache`: the nodes of a way have close ids, so most look-ups need no
+    /// decode of a page (Tartu from the file of Estonia: about 15 million look-ups).
+    fn get_cached(&self, id: i64, cache: &mut PageCache) -> Option<u32> {
+        if !(cache.lo <= id && id < cache.hi) {
+            let i = self.pages.partition_point(|p| p.0 <= id).checked_sub(1)?;
+            cache.lo = self.pages[i].0;
+            cache.hi = self.pages.get(i + 1).map_or(i64::MAX, |p| p.0);
+            cache.runs.clear();
+            self.page_bytes(i, |b| {
+                let (mut at, mut end) = (0, self.pages[i].0);
+                while at < b.len() {
+                    let first = end + get_varint(b, &mut at) as i64;
+                    let last = first + get_varint(b, &mut at) as i64;
+                    let tile = get_varint(b, &mut at) as u32;
+                    end = last;
+                    cache.runs.push((first, last, tile));
+                }
+            });
+        }
+        let k = cache.runs.partition_point(|r| r.0 <= id).checked_sub(1)?;
+        let r = cache.runs[k];
+        (id <= r.1).then_some(r.2)
     }
 
     #[cfg(test)]
@@ -1106,6 +1144,8 @@ impl RawSink for Nodes<'_> {
 /// outside the tile, the runs of the ways, and the relations, whole.
 struct Ways<'a> {
     nodes: &'a Book,
+    /// the last page of `nodes` that a look-up decoded
+    page: PageCache,
     /// the nodes in the border of other tiles (sorted (node, tile)): a way with such a node goes to those tiles too
     near: &'a [(i64, u32)],
     runs: BlockRuns,
@@ -1128,7 +1168,8 @@ impl RawSink for Ways<'_> {
     fn way<'a>(&mut self, id: i64, tags: &mut dyn Iterator<Item = (&'a str, &'a str)>, refs: &mut dyn Iterator<Item = i64>) {
         widen(&mut self.spans[0], id);
         self.ids.push(id);
-        let refs: Vec<(i64, Option<u32>)> = refs.map(|n| (n, self.nodes.get(n))).collect();
+        let (nodes, page) = (self.nodes, &mut self.page);
+        let refs: Vec<(i64, Option<u32>)> = refs.map(|n| (n, nodes.get_cached(n, page))).collect();
         self.tiles.clear();
         self.tiles.extend(refs.iter().filter_map(|r| r.1));
         self.tiles.sort_unstable();
@@ -1753,6 +1794,7 @@ fn cut<R: Read + Seek + Send>(
         |b, buf| {
             let mut s = Ways {
                 nodes: &nodes,
+                page: PageCache::default(),
                 near: &near,
                 runs: BlockRuns::new(),
                 multi: Vec::new(),
